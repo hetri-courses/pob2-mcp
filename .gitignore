@@ -31,6 +31,9 @@ pob2-fork/
 # Staging area (used during dev; intermediate copies)
 lua-port/
 
+# Build-guide HTML output + icon cache (user-generated content)
+generated/
+
 # Env
 .env
 .env.local

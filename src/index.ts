@@ -36,6 +36,7 @@ import {
   analyzeItemUpgrade,
   suggestNodeSwaps,
 } from "./theorycraft.js";
+import { generateBuildGuide } from "./htmlGuide.js";
 import { searchGems, getGem, gemStats, type GemType } from "./gemData.js";
 
 const SERVER_NAME = "pob2-mcp";
@@ -550,6 +551,27 @@ const TOOLS = [
       required: ["itemText"],
     },
   },
+  // ----- Phase 7: HTML build guide generator -----
+  {
+    name: "generate_build_guide",
+    description:
+      "Generate a single self-contained HTML build guide for the currently-loaded build. " +
+      "Pulls live calc-engine stats, resolves passive node names + icons, gem links + tooltips, " +
+      "equipped items + rarity colors, and renders into one .html file with inline CSS+JS. Icons " +
+      "are fetched from poe2db.tw and base64-embedded so the file works offline once generated. " +
+      "Auto-links PoE2 jargon to a glossary section. Output defaults to " +
+      "D:\\pob2-mcp\\generated\\<buildName>.html.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        outputPath: { type: "string", description: "Override full output path." },
+        outputDir: { type: "string", description: "Override output directory (filename auto-derived from build name)." },
+        title: { type: "string", description: "Override page title." },
+        fetchIcons: { type: "boolean", description: "Set false to skip network icon fetches (use placeholders only). Default true." },
+        iconTimeoutMs: { type: "number", description: "Per-icon fetch timeout (default 10000)." },
+      },
+    },
+  },
   // ----- Phase 6A: suggestion engine -----
   {
     name: "suggest_node_swaps",
@@ -856,6 +878,19 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           itemText,
           slotName: typeof a.slotName === "string" ? a.slotName : undefined,
           stats: Array.isArray(a.stats) ? (a.stats as string[]) : undefined,
+        });
+        return ok(result);
+      }
+      case "generate_build_guide": {
+        const b = await ensureBridge();
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const result = await generateBuildGuide(b, fp, {
+          outputPath: typeof a.outputPath === "string" ? a.outputPath : undefined,
+          outputDir: typeof a.outputDir === "string" ? a.outputDir : undefined,
+          title: typeof a.title === "string" ? a.title : undefined,
+          fetchIcons: a.fetchIcons === false ? false : undefined,
+          iconTimeoutMs: typeof a.iconTimeoutMs === "number" ? a.iconTimeoutMs : undefined,
         });
         return ok(result);
       }
