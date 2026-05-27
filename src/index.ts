@@ -30,7 +30,12 @@ import { fileURLToPath } from "node:url";
 import { LuaBridge, LuaBridgeError, type LuaResponse } from "./luaBridge.js";
 import { searchNodes, getNode, resolveNodes, type TreeNodeType } from "./treeData.js";
 import { fetchBuild, FetchBuildError } from "./fetchBuild.js";
-import { findDeadNodes, simulateLevelUp, analyzeItemUpgrade } from "./theorycraft.js";
+import {
+  findDeadNodes,
+  simulateLevelUp,
+  analyzeItemUpgrade,
+  suggestNodeSwaps,
+} from "./theorycraft.js";
 import { searchGems, getGem, gemStats, type GemType } from "./gemData.js";
 
 const SERVER_NAME = "pob2-mcp";
@@ -545,6 +550,43 @@ const TOOLS = [
       required: ["itemText"],
     },
   },
+  // ----- Phase 6A: suggestion engine -----
+  {
+    name: "suggest_node_swaps",
+    description:
+      "Recommend passive-tree swaps that improve a target metric (default TotalDPS). " +
+      "Identifies 'dead' allocated nodes (whose removal barely affects the metric), pairs each " +
+      "with unallocated neighbors within `maxDepth` hops, runs hypothetical calc_with for each " +
+      "swap, and returns ranked proposals with action-ready payloads for lua_update_tree_delta. " +
+      "Non-persistent — does NOT mutate the loaded build. Typical runtime ~1-3 seconds.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetMetric: {
+          type: "string",
+          description: "Stat to optimize (e.g. 'TotalDPS', 'TotalEHP', 'Life'). Default: TotalDPS.",
+        },
+        maxDepth: {
+          type: "number",
+          description: "BFS hop limit from current tree (1=direct neighbors only). Default 2.",
+        },
+        maxCandidates: {
+          type: "number",
+          description: "Cap on add-candidate count. Default 30.",
+        },
+        maxDead: {
+          type: "number",
+          description: "Cap on dead-node candidates we'll consider dropping. Default 5.",
+        },
+        limit: { type: "number", description: "Max proposals to return. Default 10." },
+        deadThreshold: {
+          type: "number",
+          description: "Percentage impact threshold below which a node is considered 'dead'. Default 1.0.",
+        },
+        treeVersion: { type: "string", description: "Tree version (default '0_4')." },
+      },
+    },
+  },
 ] as const;
 
 // ----- Server setup ----------------------------------------------------------
@@ -814,6 +856,21 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           itemText,
           slotName: typeof a.slotName === "string" ? a.slotName : undefined,
           stats: Array.isArray(a.stats) ? (a.stats as string[]) : undefined,
+        });
+        return ok(result);
+      }
+      case "suggest_node_swaps": {
+        const b = await ensureBridge();
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const result = await suggestNodeSwaps(b, fp, {
+          targetMetric: typeof a.targetMetric === "string" ? a.targetMetric : undefined,
+          maxDepth: typeof a.maxDepth === "number" ? a.maxDepth : undefined,
+          maxCandidates: typeof a.maxCandidates === "number" ? a.maxCandidates : undefined,
+          maxDead: typeof a.maxDead === "number" ? a.maxDead : undefined,
+          limit: typeof a.limit === "number" ? a.limit : undefined,
+          deadThreshold: typeof a.deadThreshold === "number" ? a.deadThreshold : undefined,
+          treeVersion: typeof a.treeVersion === "string" ? a.treeVersion : undefined,
         });
         return ok(result);
       }

@@ -23,6 +23,8 @@ export interface TreeNode {
   classStartIndex?: number;
   reminderText?: string[];
   flavourText?: string;
+  /** Node IDs this node is directly connected to (undirected edges). */
+  connections: number[];
 }
 
 export type TreeNodeType =
@@ -46,6 +48,7 @@ interface RawNode {
   classStartIndex?: number;
   reminderText?: string[];
   flavourText?: string;
+  connections?: Array<{ id: number; orbit?: number }>;
 }
 
 interface RawTree {
@@ -79,16 +82,24 @@ export function loadTree(forkPath: string, version = "0_4"): CachedTree {
   const byNameLower = new Map<string, number[]>();
   const all: TreeNode[] = [];
 
+  // Two-pass build: first pass creates nodes with their directly-listed
+  // outgoing connections; second pass computes the symmetric closure so
+  // BFS works in either direction. (tree.json stores edges one-way: an
+  // edge between A and B appears in only one of A.connections or
+  // B.connections, never both.)
   for (const [idStr, n] of Object.entries(raw.nodes)) {
     const id = parseInt(idStr, 10);
     if (!Number.isFinite(id)) continue;
-    if (!n.name) continue; // skip nameless internal nodes
+    if (!n.name) continue;
 
     const node: TreeNode = {
       id,
       name: n.name,
       stats: n.stats ?? [],
       type: classify(n),
+      connections: Array.isArray(n.connections)
+        ? n.connections.map((c) => c.id).filter((x) => Number.isFinite(x))
+        : [],
       ...(n.ascendancyName ? { ascendancyName: n.ascendancyName } : {}),
       ...(n.classStartIndex !== undefined ? { classStartIndex: n.classStartIndex } : {}),
       ...(n.reminderText ? { reminderText: n.reminderText } : {}),
@@ -101,6 +112,16 @@ export function loadTree(forkPath: string, version = "0_4"): CachedTree {
     if (arr) arr.push(id);
     else byNameLower.set(key, [id]);
     all.push(node);
+  }
+
+  // Symmetric closure: if A.connections contains B, ensure B.connections contains A.
+  for (const node of all) {
+    for (const otherId of node.connections) {
+      const other = byId.get(otherId);
+      if (other && !other.connections.includes(node.id)) {
+        other.connections.push(node.id);
+      }
+    }
   }
 
   const cached: CachedTree = { raw, byId, byNameLower, all };
@@ -211,6 +232,57 @@ export function resolveNodes(
   for (const id of ids) {
     const n = tree.byId.get(id);
     if (n) out.push(n);
+  }
+  return out;
+}
+
+/**
+ * BFS from a set of allocated nodes to find unallocated neighbors within
+ * `maxDepth` hops. Treats `allocated` as the "free" path layer — neighbors
+ * of allocated nodes that aren't themselves allocated are candidates.
+ *
+ * `maxDepth=1` returns only immediate neighbors of the current tree.
+ * `maxDepth=2` includes one-step-removed nodes (you'd need to also allocate
+ * an intermediate to actually reach them — not handled here, just listed).
+ */
+export function findCandidateNeighbors(
+  forkPath: string,
+  allocated: ReadonlyArray<number>,
+  maxDepth = 1,
+  options: { excludeTypes?: TreeNodeType[]; version?: string } = {}
+): TreeNode[] {
+  const { excludeTypes = ["jewel-socket", "class-start"], version = "0_4" } = options;
+  const tree = loadTree(forkPath, version);
+  const allocatedSet = new Set<number>(allocated);
+  const seen = new Set<number>(allocatedSet);
+  const candidates = new Set<number>();
+
+  // BFS: frontier starts at allocated nodes
+  let frontier: number[] = [...allocatedSet];
+  for (let depth = 0; depth < maxDepth && frontier.length; depth++) {
+    const next: number[] = [];
+    for (const id of frontier) {
+      const node = tree.byId.get(id);
+      if (!node) continue;
+      for (const conn of node.connections) {
+        if (seen.has(conn)) continue;
+        seen.add(conn);
+        next.push(conn);
+        if (!allocatedSet.has(conn)) candidates.add(conn);
+      }
+    }
+    frontier = next;
+  }
+
+  const excludeSet = new Set<TreeNodeType>(excludeTypes);
+  const out: TreeNode[] = [];
+  for (const id of candidates) {
+    const node = tree.byId.get(id);
+    if (!node) continue;
+    if (excludeSet.has(node.type)) continue;
+    // Skip ascendancy nodes by default — they need their own routing logic
+    if (node.type === "ascendancy-normal" || node.type === "ascendancy-notable") continue;
+    out.push(node);
   }
   return out;
 }
