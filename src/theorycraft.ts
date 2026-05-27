@@ -11,7 +11,9 @@
  */
 
 import type { LuaBridge } from "./luaBridge.js";
+import type { BridgeLike } from "./luaBridgePool.js";
 import { resolveNodes, findCandidateNeighbors, type TreeNode } from "./treeData.js";
+import { listGems, getGem } from "./gemData.js";
 
 /** Default stat sample for find_dead_nodes. Keep small so calls stay fast. */
 const DEFAULT_PROBE_STATS = ["TotalDPS", "CombinedDPS", "Life", "TotalEHP", "Speed"] as const;
@@ -186,6 +188,488 @@ function round(n: number, places = 4): number {
   return Math.round(n * m) / m;
 }
 
+/**
+ * Send a batch of requests via a BridgeLike. If it's a pool with
+ * `batchSend`, distribute across workers. Otherwise fall back to serial.
+ */
+async function sendBatch(bridge: BridgeLike, reqs: Array<{ action: string; params?: Record<string, unknown> }>) {
+  const maybePool = bridge as BridgeLike & {
+    batchSend?: (rs: typeof reqs) => Promise<Array<import("./luaBridge.js").LuaResponse>>;
+  };
+  if (typeof maybePool.batchSend === "function") {
+    return maybePool.batchSend(reqs);
+  }
+  const out: Array<import("./luaBridge.js").LuaResponse> = [];
+  for (const r of reqs) out.push(await bridge.send(r));
+  return out;
+}
+
+// ===========================================================================
+// Phase 6D: suggest_gem_link
+// ===========================================================================
+
+export interface GemLinkProposal {
+  candidate: { name: string; gemType: string; tier: number; tags: string[]; isSupport: boolean };
+  baselineMetric: number;
+  withCandidateMetric: number;
+  delta: number;
+  pct: number | null;
+  /** Action-ready payload: how to actually add this gem. */
+  payload: {
+    action: "add_gem";
+    params: { groupIndex: number; gemName: string; level: number; quality: number; enabled: true };
+  };
+}
+
+export interface SuggestGemLinkResult {
+  groupIndex: number;
+  groupLabel: string | null;
+  mainActiveSkill: string | null;
+  mainActiveTags: string[];
+  baseline: number;
+  targetMetric: string;
+  considered: { candidatesScreened: number; candidatesTested: number };
+  proposals: GemLinkProposal[];
+  elapsedMs: number;
+}
+
+/**
+ * Test support-gem additions to a socket group and rank by target-metric impact.
+ *
+ * Algorithm:
+ *   1. Read the target group's current gems via get_skills. Identify the main
+ *      active skill's tags (intelligence/lightning/area/...).
+ *   2. Filter the gem DB to SUPPORT gems whose tags overlap the active skill's
+ *      (a poor man's compatibility check — PoB2's real check is stricter, but
+ *      this is good enough to weed out totally-irrelevant supports).
+ *   3. For each candidate (capped at `maxCandidates`):
+ *        a. add_gem({groupIndex, gemName, level, quality}) — returns the new
+ *           gem index.
+ *        b. get_stats({fields: [targetMetric]}) — measure.
+ *        c. remove_gem({groupIndex, gemIndex}) — restore.
+ *   4. Rank by Δ(targetMetric). Return top N.
+ *
+ * Cost: ~3 send()s per candidate × ~150ms each. 10 candidates ≈ 4-5s.
+ */
+export async function suggestGemLink(
+  bridge: LuaBridge,
+  forkPath: string,
+  options: {
+    /** Which socket group to test additions on. Defaults to the main DPS group. */
+    groupIndex?: number;
+    /** Stat to optimize. Default TotalDPS. */
+    targetMetric?: string;
+    /** Cap on candidates we'll spend a real calc_with on. Default 12. */
+    maxCandidates?: number;
+    /** Cap on returned proposals. Default 8. */
+    limit?: number;
+    /** Gem level for the simulated add. Default 20. */
+    simLevel?: number;
+    /** Gem quality for the simulated add. Default 20. */
+    simQuality?: number;
+  } = {}
+): Promise<SuggestGemLinkResult> {
+  const targetMetric = options.targetMetric ?? "TotalDPS";
+  const maxCandidates = options.maxCandidates ?? 12;
+  const limit = options.limit ?? 8;
+  const simLevel = options.simLevel ?? 20;
+  const simQuality = options.simQuality ?? 20;
+  const start = Date.now();
+
+  // 1. Inspect current skills + main active
+  const skillsResp = await bridge.send({ action: "get_skills" });
+  const skills = (skillsResp.skills ?? {}) as {
+    mainSocketGroup?: number;
+    groups?: Array<{
+      index: number; label?: string;
+      mainActiveSkill?: number;
+      gems?: Array<{ index: number; nameSpec?: string; skillId?: string; isSupport?: boolean }>;
+    }>;
+  };
+  const groupIndex = options.groupIndex ?? skills.mainSocketGroup ?? 1;
+  const group = (skills.groups ?? []).find((g) => g.index === groupIndex);
+  if (!group) {
+    throw new Error(`No socket group at index ${groupIndex}`);
+  }
+
+  // Identify the main active gem in this group
+  const activeIdx = group.mainActiveSkill ?? 1;
+  const activeGemEntry = (group.gems ?? [])[activeIdx - 1] ?? (group.gems ?? []).find((g) => !g.isSupport);
+  const activeName = activeGemEntry?.nameSpec ?? activeGemEntry?.skillId ?? null;
+  let activeTags: string[] = [];
+  if (activeName) {
+    const dbGem = getGem(forkPath, activeName);
+    if (dbGem) activeTags = dbGem.tags;
+  }
+
+  // 2. Filter candidate supports — overlap tags with active skill, exclude
+  //    supports already in the group.
+  const existingSupportNames = new Set(
+    (group.gems ?? [])
+      .filter((g) => g.isSupport)
+      .map((g) => (g.nameSpec ?? g.skillId ?? "").toLowerCase())
+  );
+
+  // Walk every support gem in the catalog
+  const allCandidates = listGems(forkPath, { supportOnly: true });
+
+  // Tags that indicate "this support causes a side effect" rather than scaling
+  // the supported skill's damage. PoE2 has many of these (triggers, hazards,
+  // payoff supports) — they show ~0 delta in our smoke and pollute results.
+  // Filter them out unless the user opts in to seeing them.
+  const TRIGGER_TAGS = new Set(["trigger", "payoff", "hazard", "plant"]);
+  // Tags that DO scale damage — prioritize supports with these
+  const SCALING_TAGS = new Set([
+    "physical", "fire", "cold", "lightning", "chaos",
+    "critical", "duration", "projectile", "melee", "spell",
+    "minion", "totem", "aura",
+  ]);
+
+  // Score: tag overlap with active + bonus for scaling tags, penalty for triggers
+  const screened = allCandidates
+    .filter((g) => !existingSupportNames.has(g.name.toLowerCase()))
+    .filter((g) => !g.tags.some((t) => TRIGGER_TAGS.has(t.toLowerCase())))
+    .map((g) => {
+      const overlap = g.tags.filter((t) => activeTags.includes(t)).length;
+      const scalingHits = g.tags.filter((t) => SCALING_TAGS.has(t.toLowerCase())).length;
+      const score = overlap * 10 + scalingHits * 5 - g.tier;
+      return { gem: g, overlap, score };
+    })
+    .filter((x) => x.overlap > 0 || activeTags.length === 0)
+    .sort((a, b) => b.score - a.score);
+
+  const candidates = screened.slice(0, maxCandidates).map((s) => s.gem);
+
+  // 3. Baseline metric
+  const baselineStats = (
+    await bridge.send({ action: "get_stats", params: { fields: [targetMetric] } })
+  ).stats as Record<string, number>;
+  const baseline = Number(baselineStats?.[targetMetric] ?? 0);
+
+  // 4. For each candidate: add → measure → remove
+  const proposals: GemLinkProposal[] = [];
+  for (const cand of candidates) {
+    const addResp = await bridge.send({
+      action: "add_gem",
+      params: {
+        groupIndex,
+        gemName: cand.name,
+        level: simLevel,
+        quality: simQuality,
+        enabled: true,
+      },
+    });
+    if (addResp.ok === false) continue;
+    const newGemIndex = (addResp.gem as { gemIndex?: number } | undefined)?.gemIndex;
+
+    const probe = await bridge.send({
+      action: "get_stats",
+      params: { fields: [targetMetric] },
+    });
+    const after = Number(((probe.stats ?? {}) as Record<string, number>)[targetMetric] ?? baseline);
+
+    if (newGemIndex != null) {
+      await bridge.send({
+        action: "remove_gem",
+        params: { groupIndex, gemIndex: newGemIndex },
+      });
+    }
+
+    const delta = after - baseline;
+    const pct = baseline !== 0 ? round((delta / Math.abs(baseline)) * 100, 2) : null;
+    proposals.push({
+      candidate: {
+        name: cand.name,
+        gemType: cand.gemType,
+        tier: cand.tier,
+        tags: cand.tags,
+        isSupport: cand.isSupport,
+      },
+      baselineMetric: round(baseline),
+      withCandidateMetric: round(after),
+      delta: round(delta),
+      pct,
+      payload: {
+        action: "add_gem",
+        params: {
+          groupIndex,
+          gemName: cand.name,
+          level: simLevel,
+          quality: simQuality,
+          enabled: true,
+        },
+      },
+    });
+  }
+
+  proposals.sort((a, b) => b.delta - a.delta);
+
+  return {
+    groupIndex,
+    groupLabel: group.label ?? null,
+    mainActiveSkill: activeName,
+    mainActiveTags: activeTags,
+    baseline: round(baseline),
+    targetMetric,
+    considered: { candidatesScreened: screened.length, candidatesTested: candidates.length },
+    proposals: proposals.slice(0, limit),
+    elapsedMs: Date.now() - start,
+  };
+}
+
+// ===========================================================================
+// Phase 6C: bottleneck_analysis
+// ===========================================================================
+
+export interface Bottleneck {
+  /** Short name for the issue, e.g. "Low Hit Chance". */
+  name: string;
+  category: "offence" | "defence" | "sustain" | "utility";
+  severity: "high" | "medium" | "low";
+  /** What the LLM should say in plain English. */
+  diagnosis: string;
+  /** Concrete next step. */
+  advice: string;
+  /** Optional rough estimate of the upside if fixed (e.g. "+117% DPS"). */
+  estImpact?: string;
+  /** Current value(s) that motivated this finding. */
+  observed: Record<string, number | string>;
+}
+
+export interface BottleneckReport {
+  observed: Record<string, number>;
+  bottlenecks: Bottleneck[];
+  summary: string;
+}
+
+/**
+ * Diagnostic — for a loaded build, identify what's limiting DPS or making the
+ * character squishy. Pure JS analysis over a single get_stats call (no extra
+ * calc_with probes, so it's instant).
+ *
+ * The heuristics here are intentionally conservative: we flag the obvious
+ * stuff (low hit chance, unused Spirit, lopsided EHP) and leave deeper
+ * analysis to the LLM consuming the report.
+ */
+export async function bottleneckAnalysis(bridge: LuaBridge): Promise<BottleneckReport> {
+  // Pull a wide stat sheet — bottleneck heuristics need many fields
+  const fields = [
+    "TotalDPS", "CombinedDPS", "FullDPS",
+    "HitChance", "AccuracyHitChance",
+    "CritChance", "CritMultiplier",
+    "Speed",
+    "Life", "Mana", "ManaRegen", "ManaCost", "ManaUnreserved",
+    "Spirit", "SpiritReserved", "SpiritUnreserved",
+    "PowerCharges", "PowerChargesMax",
+    "FrenzyCharges", "FrenzyChargesMax",
+    "EnduranceCharges", "EnduranceChargesMax",
+    "Armour", "Evasion", "EnergyShield", "Ward",
+    "PhysicalDamageReduction",
+    "BlockChance", "SpellBlockChance",
+    "FireResist", "FireResistOverCap",
+    "ColdResist", "ColdResistOverCap",
+    "LightningResist", "LightningResistOverCap",
+    "ChaosResist", "ChaosResistOverCap",
+    "TotalEHP",
+    "PhysicalMaximumHitTaken", "FireMaximumHitTaken",
+    "ColdMaximumHitTaken", "LightningMaximumHitTaken",
+    "ChaosMaximumHitTaken",
+    "MovementSpeedMod",
+  ];
+  const r = await bridge.send({ action: "get_stats", params: { fields } });
+  const s = (r.stats ?? {}) as Record<string, number>;
+  const bottlenecks: Bottleneck[] = [];
+  const num = (k: string): number | null =>
+    typeof s[k] === "number" ? (s[k] as number) : null;
+
+  // ----- Offence -----
+  const hit = num("HitChance");
+  if (hit != null && hit < 95 && hit > 0) {
+    const mult = 100 / hit;
+    bottlenecks.push({
+      name: "Low Hit Chance",
+      category: "offence",
+      severity: hit < 60 ? "high" : hit < 85 ? "medium" : "low",
+      diagnosis: `Hit Chance is ${hit.toFixed(0)}% — you're whiffing roughly ${(100 - hit).toFixed(0)}% of attempts.`,
+      advice:
+        "Stack accuracy on rings/quiver/tree, or pick up Resolute Technique-style nodes. " +
+        "PoE2 attacks need >95% to feel reliable.",
+      estImpact: `+${((mult - 1) * 100).toFixed(0)}% effective DPS if hit chance reaches 100%.`,
+      observed: { HitChance: hit },
+    });
+  }
+
+  const critChance = num("CritChance");
+  const critMult = num("CritMultiplier");
+  if (critChance != null && critMult != null && critMult >= 1.5) {
+    // Crit DPS multiplier = 1 + critChance/100 * (critMult - 1)
+    const currentCritMult = 1 + (critChance / 100) * (critMult - 1);
+    const cappedCritChance = 100;
+    const idealCritMult = 1 + (cappedCritChance / 100) * (critMult - 1);
+    const headroom = (idealCritMult / currentCritMult - 1) * 100;
+    if (critChance < 30 && headroom > 25) {
+      bottlenecks.push({
+        name: "Underused Crit Multiplier",
+        category: "offence",
+        severity: critChance < 10 ? "high" : "medium",
+        diagnosis:
+          `CritChance is ${critChance.toFixed(1)}% but CritMultiplier is ${critMult.toFixed(2)}× — ` +
+          `your big-hit ceiling is high but you rarely trigger it.`,
+        advice:
+          "Either scale Crit Chance hard (passives, gear, supports) to unlock the multiplier, OR " +
+          "drop the Crit Multiplier investment for flat damage instead.",
+        estImpact: `Up to +${headroom.toFixed(0)}% DPS if Crit Chance approaches cap.`,
+        observed: { CritChance: critChance, CritMultiplier: critMult },
+      });
+    }
+  }
+
+  // ----- Sustain -----
+  const manaCost = num("ManaCost");
+  const manaUnreserved = num("ManaUnreserved");
+  const manaRegen = num("ManaRegen");
+  if (manaCost != null && manaUnreserved != null && manaCost > 0) {
+    if (manaCost > manaUnreserved) {
+      bottlenecks.push({
+        name: "Mana-Locked",
+        category: "sustain",
+        severity: "high",
+        diagnosis: `Skill costs ${manaCost} mana but you only have ${manaUnreserved} unreserved — you literally can't cast.`,
+        advice:
+          "Reduce reservation, add flat mana on gear, or pick up a mana-cost reduction node/support. " +
+          "Mana leech also fixes this for attacks.",
+        observed: { ManaCost: manaCost, ManaUnreserved: manaUnreserved },
+      });
+    } else if (manaRegen != null && manaRegen < manaCost * 1.5) {
+      bottlenecks.push({
+        name: "Marginal Mana Regen",
+        category: "sustain",
+        severity: "low",
+        diagnosis: `Mana regen (${manaRegen.toFixed(1)}/s) is tight relative to skill cost (${manaCost}).`,
+        advice: "Sustained casting may stutter under spam. Consider mana leech or reducing reservation.",
+        observed: { ManaCost: manaCost, ManaRegen: manaRegen },
+      });
+    }
+  }
+
+  // ----- Utility -----
+  const spiritTotal = num("Spirit");
+  const spiritUnreserved = num("SpiritUnreserved");
+  if (spiritTotal != null && spiritUnreserved != null && spiritTotal > 0) {
+    const unusedPct = (spiritUnreserved / spiritTotal) * 100;
+    if (unusedPct > 30) {
+      bottlenecks.push({
+        name: "Unused Spirit Budget",
+        category: "utility",
+        severity: unusedPct > 70 ? "medium" : "low",
+        diagnosis: `${spiritUnreserved.toFixed(0)} / ${spiritTotal.toFixed(0)} Spirit unreserved (${unusedPct.toFixed(0)}%).`,
+        advice:
+          "Spirit is free power — slot more reservation buffs (Heralds, auras, persistent buffs).",
+        observed: { Spirit: spiritTotal, SpiritUnreserved: spiritUnreserved },
+      });
+    }
+  }
+
+  // Charges at zero with high max — wasted generation potential
+  for (const [type, maxKey] of [
+    ["PowerCharges", "PowerChargesMax"],
+    ["FrenzyCharges", "FrenzyChargesMax"],
+    ["EnduranceCharges", "EnduranceChargesMax"],
+  ] as const) {
+    const cur = num(type);
+    const max = num(maxKey);
+    if (cur != null && max != null && max >= 3 && cur === 0) {
+      bottlenecks.push({
+        name: `${type.replace("Charges", " Charges")} Not Generated`,
+        category: "utility",
+        severity: "low",
+        diagnosis: `You have ${max} ${type.replace("Charges", "Charge").toLowerCase()} capacity but generate 0 in calc.`,
+        advice:
+          `Either ensure your config assumes max ${type.toLowerCase()}, or add a generation source ` +
+          `(on-crit, on-hit, skill-based). Setting them to max in lua_set_config is the quick fix.`,
+        observed: { [type]: cur, [maxKey]: max },
+      });
+    }
+  }
+
+  // ----- Defence -----
+  // Resistances below cap
+  for (const elem of ["Fire", "Cold", "Lightning"] as const) {
+    const res = num(`${elem}Resist`);
+    if (res != null && res < 75) {
+      const gap = 75 - res;
+      bottlenecks.push({
+        name: `${elem} Resistance Undercapped`,
+        category: "defence",
+        severity: res < 0 ? "high" : res < 50 ? "medium" : "low",
+        diagnosis: `${elem} Resistance is ${res}% (cap 75%, gap ${gap}%).`,
+        advice:
+          `Add ${gap}% ${elem} Resist on gear before mapping. Each missing point amplifies ${elem.toLowerCase()} hits taken by ~1% above cap.`,
+        observed: { [`${elem}Resist`]: res },
+      });
+    }
+  }
+  const chaos = num("ChaosResist");
+  if (chaos != null && chaos < 0) {
+    bottlenecks.push({
+      name: "Negative Chaos Resist",
+      category: "defence",
+      severity: chaos < -25 ? "medium" : "low",
+      diagnosis: `Chaos Resistance is ${chaos}% — chaos hits and poison DoTs bypass your defenses harder than necessary.`,
+      advice: "Cap at 0% before endgame; ideally push positive for chaos-dot maps.",
+      observed: { ChaosResist: chaos },
+    });
+  }
+
+  // Lopsided EHP — flag any damage type that's much weaker than the others
+  const ehpByType: Record<string, number> = {};
+  for (const k of [
+    "PhysicalMaximumHitTaken",
+    "FireMaximumHitTaken",
+    "ColdMaximumHitTaken",
+    "LightningMaximumHitTaken",
+    "ChaosMaximumHitTaken",
+  ]) {
+    const v = num(k);
+    if (v != null) ehpByType[k.replace("MaximumHitTaken", "")] = v;
+  }
+  const ehpVals = Object.values(ehpByType);
+  if (ehpVals.length >= 3) {
+    const max = Math.max(...ehpVals);
+    const min = Math.min(...ehpVals);
+    if (max > 0 && min / max < 0.5) {
+      const weakest = Object.entries(ehpByType).reduce((a, b) => (b[1] < a[1] ? b : a));
+      bottlenecks.push({
+        name: `Weak vs ${weakest[0]}`,
+        category: "defence",
+        severity: min / max < 0.3 ? "high" : "medium",
+        diagnosis:
+          `Max ${weakest[0].toLowerCase()} hit you can survive is ${weakest[1].toFixed(0)} — ` +
+          `that's only ${((min / max) * 100).toFixed(0)}% of your strongest defense layer (${max.toFixed(0)}).`,
+        advice:
+          weakest[0] === "Physical"
+            ? "Stack armour, fortify, phys-reduction nodes, or a determination-style buff."
+            : `Cap ${weakest[0]} resist + grab an aegis or resistance-related layer for that element.`,
+        observed: ehpByType,
+      });
+    }
+  }
+
+  // Sort: high severity first, then category alphabetical for stability
+  const sevOrder: Record<Bottleneck["severity"], number> = { high: 0, medium: 1, low: 2 };
+  bottlenecks.sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity] || a.category.localeCompare(b.category));
+
+  const high = bottlenecks.filter((b) => b.severity === "high").length;
+  const med = bottlenecks.filter((b) => b.severity === "medium").length;
+  const low = bottlenecks.filter((b) => b.severity === "low").length;
+  const summary =
+    bottlenecks.length === 0
+      ? "No major bottlenecks flagged — this is either a well-rounded build or the heuristic set didn't catch the issue."
+      : `${bottlenecks.length} issues flagged: ${high} high, ${med} medium, ${low} low.`;
+
+  return { observed: s, bottlenecks, summary };
+}
+
 // ===========================================================================
 // Phase 6A: suggest_node_swaps
 // ===========================================================================
@@ -238,7 +722,7 @@ export interface SuggestSwapsResult {
  * Uses calc_with's non-persistent mode — does NOT mutate the build.
  */
 export async function suggestNodeSwaps(
-  bridge: LuaBridge,
+  bridge: BridgeLike,
   forkPath: string,
   options: {
     targetMetric?: string;
@@ -275,24 +759,30 @@ export async function suggestNodeSwaps(
   const treeObj = (treeResp.tree ?? {}) as { nodes?: number[] };
   const allocated = treeObj.nodes ?? [];
 
-  // 2. Identify dead allocated nodes (removal barely changes the target metric)
-  const deadCandidates: Array<{ node: TreeNode; deltaFromRemoval: number }> = [];
+  // 2. Identify dead allocated nodes (removal barely changes the target metric).
+  //    If we have a pool (BridgeLike with batchSend), parallelize the probes.
   const treeMeta = resolveNodes(forkPath, allocated, treeVersion);
   const metaById = new Map(treeMeta.map((n) => [n.id, n]));
-
   const noiseFloor = Math.max(Math.abs(baseline) * (deadThreshold / 100), 0.0001);
 
-  for (const id of allocated) {
-    const node = metaById.get(id);
-    if (!node) continue;
-    if (node.type === "class-start") continue;
-    const probe = await bridge.send({
-      action: "calc_with",
-      params: { removeNodes: [id], fields: [targetMetric] },
-    });
+  const probeNodes = allocated.filter((id) => {
+    const n = metaById.get(id);
+    return n && n.type !== "class-start";
+  });
+  const probeReqs = probeNodes.map((id) => ({
+    action: "calc_with",
+    params: { removeNodes: [id], fields: [targetMetric] },
+  }));
+  const probeResults = await sendBatch(bridge, probeReqs);
+
+  const deadCandidates: Array<{ node: TreeNode; deltaFromRemoval: number }> = [];
+  for (let i = 0; i < probeNodes.length; i++) {
+    const probe = probeResults[i];
+    const id = probeNodes[i];
     if (probe.ok === false) continue;
+    const node = metaById.get(id)!;
     const after = Number((probe.output as Record<string, number>)?.[targetMetric] ?? baseline);
-    const removalDelta = after - baseline; // typically <= 0 (removal hurts)
+    const removalDelta = after - baseline;
     if (Math.abs(removalDelta) < noiseFloor) {
       deadCandidates.push({ node, deltaFromRemoval: removalDelta });
     }
@@ -306,43 +796,39 @@ export async function suggestNodeSwaps(
     version: treeVersion,
   }).slice(0, maxCandidates);
 
-  // 4. Try every (drop, add) pair
-  const proposals: SwapProposal[] = [];
+  // 4. Try every (drop, add) pair — batched for pool parallelism
+  const pairs: Array<{ dead: typeof deadTop[number]; cand: typeof addCandidates[number] }> = [];
   for (const dead of deadTop) {
-    for (const cand of addCandidates) {
-      const result = await bridge.send({
-        action: "calc_with",
-        params: {
-          removeNodes: [dead.node.id],
-          addNodes: [cand.id],
-          fields: [targetMetric],
-        },
-      });
-      if (result.ok === false) continue;
-      const after = Number(
-        (result.output as Record<string, number>)?.[targetMetric] ?? baseline
-      );
-      const delta = after - baseline;
-      const pct = baseline !== 0 ? round((delta / Math.abs(baseline)) * 100, 2) : null;
-      proposals.push({
-        drop: {
-          id: dead.node.id,
-          name: dead.node.name,
-          type: dead.node.type,
-          stats: dead.node.stats,
-        },
-        add: {
-          id: cand.id,
-          name: cand.name,
-          type: cand.type,
-          stats: cand.stats,
-        },
-        delta: round(delta),
-        pct,
-        afterValue: round(after),
-        payload: { removeNodes: [dead.node.id], addNodes: [cand.id] },
-      });
-    }
+    for (const cand of addCandidates) pairs.push({ dead, cand });
+  }
+  const pairReqs = pairs.map(({ dead, cand }) => ({
+    action: "calc_with",
+    params: {
+      removeNodes: [dead.node.id],
+      addNodes: [cand.id],
+      fields: [targetMetric],
+    },
+  }));
+  const pairResults = await sendBatch(bridge, pairReqs);
+
+  const proposals: SwapProposal[] = [];
+  for (let i = 0; i < pairs.length; i++) {
+    const { dead, cand } = pairs[i];
+    const result = pairResults[i];
+    if (result.ok === false) continue;
+    const after = Number(
+      (result.output as Record<string, number>)?.[targetMetric] ?? baseline
+    );
+    const delta = after - baseline;
+    const pct = baseline !== 0 ? round((delta / Math.abs(baseline)) * 100, 2) : null;
+    proposals.push({
+      drop: { id: dead.node.id, name: dead.node.name, type: dead.node.type, stats: dead.node.stats },
+      add: { id: cand.id, name: cand.name, type: cand.type, stats: cand.stats },
+      delta: round(delta),
+      pct,
+      afterValue: round(after),
+      payload: { removeNodes: [dead.node.id], addNodes: [cand.id] },
+    });
   }
 
   // 5. Dedupe: PoB's tree often has multiple positions with the same stat

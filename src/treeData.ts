@@ -237,6 +237,87 @@ export function resolveNodes(
 }
 
 /**
+ * Find the cheapest path from the current allocation to a target node.
+ *
+ * BFS over the tree treating each allocated node as a free starting point.
+ * Returns the sequence of UNALLOCATED nodes that need to be allocated in
+ * order to reach the target (including the target itself), plus the total
+ * point cost (== path.length).
+ *
+ * Returns null if the target is unreachable, already allocated, or doesn't
+ * exist in the tree. Excludes ascendancy + jewel-socket nodes from path
+ * traversal unless they're already allocated — same routing rules PoB uses.
+ */
+export function findPathToNode(
+  forkPath: string,
+  allocated: ReadonlyArray<number>,
+  targetId: number,
+  options: { version?: string; maxHops?: number } = {}
+): {
+  path: TreeNode[];
+  cost: number;
+  /** Whether the target was already allocated (path = [], cost = 0). */
+  alreadyAllocated: boolean;
+} | null {
+  const { version = "0_4", maxHops = 30 } = options;
+  const tree = loadTree(forkPath, version);
+  const target = tree.byId.get(targetId);
+  if (!target) return null;
+  const allocSet = new Set<number>(allocated);
+  if (allocSet.has(targetId)) {
+    return { path: [], cost: 0, alreadyAllocated: true };
+  }
+
+  // BFS with parent-pointer reconstruction
+  const parent = new Map<number, number>(); // node → parent in BFS
+  const visited = new Set<number>(allocSet);
+  let frontier: number[] = [...allocSet];
+
+  // Excluded types we won't path through
+  const excludeFromPath = (id: number): boolean => {
+    const n = tree.byId.get(id);
+    if (!n) return true;
+    // Allow traversal through already-allocated regardless; for unallocated,
+    // skip ascendancy + jewel-sockets + class-starts.
+    if (allocSet.has(id)) return false;
+    return n.type === "ascendancy-normal" ||
+      n.type === "ascendancy-notable" ||
+      n.type === "class-start" ||
+      n.type === "jewel-socket";
+  };
+
+  for (let depth = 0; depth < maxHops && frontier.length; depth++) {
+    const next: number[] = [];
+    for (const id of frontier) {
+      const node = tree.byId.get(id);
+      if (!node) continue;
+      for (const conn of node.connections) {
+        if (visited.has(conn)) continue;
+        if (excludeFromPath(conn) && conn !== targetId) continue;
+        visited.add(conn);
+        parent.set(conn, id);
+        if (conn === targetId) {
+          // Reconstruct path: walk from target back to an allocated source
+          const path: TreeNode[] = [];
+          let cur: number | undefined = targetId;
+          while (cur !== undefined && !allocSet.has(cur)) {
+            const n = tree.byId.get(cur);
+            if (!n) break;
+            path.push(n);
+            cur = parent.get(cur);
+          }
+          path.reverse();
+          return { path, cost: path.length, alreadyAllocated: false };
+        }
+        next.push(conn);
+      }
+    }
+    frontier = next;
+  }
+  return null;
+}
+
+/**
  * BFS from a set of allocated nodes to find unallocated neighbors within
  * `maxDepth` hops. Treats `allocated` as the "free" path layer — neighbors
  * of allocated nodes that aren't themselves allocated are candidates.

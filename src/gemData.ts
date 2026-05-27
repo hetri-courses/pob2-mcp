@@ -162,6 +162,42 @@ export function getGem(forkPath: string, idOrName: string): Gem | null {
   return null;
 }
 
+/**
+ * List every gem matching a filter — no query needed. Useful for "give me all
+ * support gems compatible with X tags" without going through name search.
+ */
+export function listGems(
+  forkPath: string,
+  filter: {
+    supportOnly?: boolean;
+    activeOnly?: boolean;
+    gemType?: GemType;
+    /** Require ALL of these tags (case-insensitive). */
+    requiresAllTags?: string[];
+    /** Require ANY of these tags (case-insensitive). */
+    requiresAnyTag?: string[];
+  } = {}
+): Gem[] {
+  const data = loadGems(forkPath);
+  const lowerAll = filter.requiresAllTags?.map((t) => t.toLowerCase());
+  const lowerAny = filter.requiresAnyTag?.map((t) => t.toLowerCase());
+
+  return data.all.filter((g) => {
+    if (filter.supportOnly && !g.isSupport) return false;
+    if (filter.activeOnly && g.isSupport) return false;
+    if (filter.gemType && g.gemType !== filter.gemType) return false;
+    if (lowerAll && lowerAll.length) {
+      const lower = g.tags.map((t) => t.toLowerCase());
+      if (!lowerAll.every((t) => lower.includes(t))) return false;
+    }
+    if (lowerAny && lowerAny.length) {
+      const lower = g.tags.map((t) => t.toLowerCase());
+      if (!lowerAny.some((t) => lower.includes(t))) return false;
+    }
+    return true;
+  });
+}
+
 /** List counts per gem type — useful for "how many gems are in PoE2". */
 export function gemStats(forkPath: string): {
   total: number;

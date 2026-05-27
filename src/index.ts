@@ -28,13 +28,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { LuaBridge, LuaBridgeError, type LuaResponse } from "./luaBridge.js";
-import { searchNodes, getNode, resolveNodes, type TreeNodeType } from "./treeData.js";
+import { LuaBridgePool } from "./luaBridgePool.js";
+import { searchNodes, getNode, resolveNodes, findPathToNode, type TreeNodeType } from "./treeData.js";
 import { fetchBuild, FetchBuildError } from "./fetchBuild.js";
 import {
   findDeadNodes,
   simulateLevelUp,
   analyzeItemUpgrade,
   suggestNodeSwaps,
+  bottleneckAnalysis,
+  suggestGemLink,
 } from "./theorycraft.js";
 import { generateBuildGuide } from "./htmlGuide.js";
 import { searchGems, getGem, gemStats, type GemType } from "./gemData.js";
@@ -572,6 +575,60 @@ const TOOLS = [
       },
     },
   },
+  // ----- Phase 6D: gem suggestions -----
+  {
+    name: "suggest_gem_link",
+    description:
+      "EXPERIMENTAL — find which support gems would improve a socket group's main skill. " +
+      "Filters the gem DB to compatible supports, then simulates each via add_gem → " +
+      "get_stats → remove_gem. Returns ranked proposals with action-ready payloads. " +
+      "KNOWN ISSUE: gems added programmatically often show 0 DPS delta even when the support " +
+      "should apply — likely a field-construction mismatch vs the XML load path inside " +
+      "BuildOps.add_gem. Plumbing is correct (non-persistence verified); calc integration " +
+      "needs further investigation. The candidate filtering + action payloads are still useful " +
+      "as suggestions the user can verify in the PoB GUI.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        groupIndex: { type: "number", description: "Socket group index (default: build's mainSocketGroup)." },
+        targetMetric: { type: "string", description: "Stat to optimize. Default 'TotalDPS'." },
+        maxCandidates: { type: "number", description: "How many supports to actually simulate. Default 12." },
+        limit: { type: "number", description: "Max proposals to return. Default 8." },
+        simLevel: { type: "number", description: "Gem level for the simulated add. Default 20." },
+        simQuality: { type: "number", description: "Gem quality for the simulated add. Default 20." },
+      },
+    },
+  },
+  // ----- Phase 6C: diagnostic -----
+  {
+    name: "bottleneck_analysis",
+    description:
+      "Diagnose the loaded build: what's holding back DPS or EHP? Reads stats and flags issues " +
+      "like low hit chance, underused Crit Multiplier, uncapped resistances, unused Spirit, " +
+      "mana-locked skills, lopsided EHP layers. Returns a ranked list of bottlenecks with " +
+      "severity (high/medium/low) and concrete advice. Pure stat analysis — no extra calc " +
+      "calls, ~50ms.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  // ----- Phase 6B: pathfinding -----
+  {
+    name: "find_path_to_node",
+    description:
+      "Find the cheapest path from the currently-loaded build's allocation to a target passive " +
+      "node. Returns the ordered sequence of intermediate UNALLOCATED nodes to take (including " +
+      "the target itself) plus total point cost. Use after suggest_node_swaps when a recommended " +
+      "add is multiple hops from your current tree. Skips ascendancy and jewel-socket nodes " +
+      "during traversal (same routing rules PoB uses).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetId: { type: "number", description: "Node ID to path to (use search_tree_nodes to find one)." },
+        treeVersion: { type: "string", description: "Tree version (default '0_4')." },
+        maxHops: { type: "number", description: "BFS hop limit (default 30)." },
+      },
+      required: ["targetId"],
+    },
+  },
   // ----- Phase 6A: suggestion engine -----
   {
     name: "suggest_node_swaps",
@@ -660,6 +717,11 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           action: "load_build_xml",
           params: { xml, name: buildName ?? "API Build" },
         });
+        // Keep pool replicas in sync if a pool exists
+        if (pool && r.ok !== false) {
+          try { await pool.resyncFromPrimary(); }
+          catch (e) { console.error("[lua-pool] resync failed:", e); }
+        }
         return luaResponseTo(r);
       }
       case "lua_get_stats": {
@@ -894,8 +956,51 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         });
         return ok(result);
       }
-      case "suggest_node_swaps": {
+      case "suggest_gem_link": {
         const b = await ensureBridge();
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const result = await suggestGemLink(b, fp, {
+          groupIndex: typeof a.groupIndex === "number" ? a.groupIndex : undefined,
+          targetMetric: typeof a.targetMetric === "string" ? a.targetMetric : undefined,
+          maxCandidates: typeof a.maxCandidates === "number" ? a.maxCandidates : undefined,
+          limit: typeof a.limit === "number" ? a.limit : undefined,
+          simLevel: typeof a.simLevel === "number" ? a.simLevel : undefined,
+          simQuality: typeof a.simQuality === "number" ? a.simQuality : undefined,
+        });
+        return ok(result);
+      }
+      case "bottleneck_analysis": {
+        const b = await ensureBridge();
+        const result = await bottleneckAnalysis(b);
+        return ok(result);
+      }
+      case "find_path_to_node": {
+        const b = await ensureBridge();
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const targetId = Number(a.targetId);
+        if (!Number.isFinite(targetId)) return err("targetId must be a number");
+        const treeResp = await b.send({ action: "get_tree" });
+        const treeObj = (treeResp.tree ?? {}) as { nodes?: number[] };
+        const allocated = treeObj.nodes ?? [];
+        const result = findPathToNode(fp, allocated, targetId, {
+          version: typeof a.treeVersion === "string" ? a.treeVersion : undefined,
+          maxHops: typeof a.maxHops === "number" ? a.maxHops : undefined,
+        });
+        if (!result) return err(`Target node ${targetId} not reachable from current allocation`);
+        return ok({
+          targetId,
+          alreadyAllocated: result.alreadyAllocated,
+          cost: result.cost,
+          path: result.path,
+          payload: result.path.length
+            ? { addNodes: result.path.map((n) => n.id) }
+            : null,
+        });
+      }
+      case "suggest_node_swaps": {
+        const b = await ensurePool();
         const fp = requireForkPath();
         const a = (args as Record<string, unknown> | undefined) ?? {};
         const result = await suggestNodeSwaps(b, fp, {
@@ -1050,7 +1155,9 @@ function summarize(build: import("./build.js").PoB2Build): string {
 // ----- Lua bridge (lazy singleton; Phase 2 only) -----------------------------
 
 let bridge: LuaBridge | null = null;
+let pool: LuaBridgePool | null = null;
 let bridgeInit: Promise<LuaBridge> | null = null;
+let poolInit: Promise<void> | null = null;
 
 /**
  * Kill the current Lua bridge (if any) so the next ensureBridge() call spawns
@@ -1061,8 +1168,14 @@ async function recycleBridge(reason: string): Promise<void> {
   if (!bridge && !bridgeInit) return;
   console.error(`[lua-bridge] recycling (${reason})`);
   const prev = bridge;
+  const prevPool = pool;
   bridge = null;
+  pool = null;
   bridgeInit = null;
+  poolInit = null;
+  if (prevPool) {
+    try { await prevPool.stop(); } catch { /* ignore */ }
+  }
   if (prev) {
     try { await prev.stop(); } catch { /* ignore */ }
   }
@@ -1097,6 +1210,39 @@ async function ensureBridge(): Promise<LuaBridge> {
   });
 
   return bridgeInit;
+}
+
+/**
+ * Get the parallel pool if POB2_POOL_SIZE > 0; otherwise return the primary
+ * bridge. The pool's replicas are spawned lazily on first use. Replicas are
+ * re-synced to the primary's build state.
+ */
+async function ensurePool(): Promise<LuaBridge | LuaBridgePool> {
+  const size = parseInt(process.env.POB2_POOL_SIZE ?? "0", 10);
+  if (!Number.isFinite(size) || size <= 0) return ensureBridge();
+
+  const primary = await ensureBridge();
+  if (pool && pool.size === 1 + size) return pool;
+  if (poolInit) { await poolInit; return pool ?? primary; }
+
+  poolInit = (async () => {
+    const forkPath = process.env.POB_FORK_PATH!;
+    const p = new LuaBridgePool(primary, {
+      forkPath,
+      wslDistro: process.env.POB_WSL_DISTRO,
+      timeoutMs: process.env.POB_TIMEOUT_MS ? parseInt(process.env.POB_TIMEOUT_MS, 10) : undefined,
+      size,
+    });
+    console.error(`[lua-pool] spawning ${size} replicas...`);
+    const t0 = Date.now();
+    await p.startReplicas();
+    console.error(`[lua-pool] ${size} replicas ready after ${Date.now() - t0}ms (size=${p.size} total)`);
+    pool = p;
+  })().finally(() => {
+    poolInit = null;
+  });
+  await poolInit;
+  return pool ?? primary;
 }
 
 /** Throws if POB_FORK_PATH isn't set — required for static tree-data tools too. */
