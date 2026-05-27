@@ -1,0 +1,49 @@
+{
+  "name": "pob2-mcp",
+  "version": "0.0.1",
+  "description": "MCP server for Path of Building 2 — PoE2 build planning, analysis, and (eventually) live calc-engine integration",
+  "main": "build/index.js",
+  "type": "module",
+  "bin": {
+    "pob2-mcp": "build/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "dev": "tsx src/index.ts",
+    "dev:hot": "tsx src/index.ts",
+    "tsc:watch": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "clean": "rimraf build"
+  },
+  "keywords": [
+    "mcp",
+    "path-of-exile-2",
+    "poe2",
+    "path-of-building",
+    "pob2",
+    "claude",
+    "anthropic"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "chokidar": "^5.0.0",
+    "fast-xml-parser": "^4.5.0",
+    "pako": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "@types/pako": "^2.0.3",
+    "jest": "^29.7.0",
+    "rimraf": "^5.0.0",
+    "ts-jest": "^29.1.0",
+    "tsx": "^4.22.3",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

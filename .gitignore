@@ -1,0 +1,36 @@
+# Build output
+build/
+dist/
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test artifacts
+coverage/
+.nyc_output/
+
+# Reference repos (cloned via setup script, not tracked)
+refs/
+
+# Local working copy of PoB2 (~575 MB). Users clone their own; our Lua mods
+# are committed separately in lua-patches/.
+pob2-fork/
+
+# Staging area (used during dev; intermediate copies)
+lua-port/
+
+# Env
+.env
+.env.local

@@ -1,0 +1,1126 @@
+#!/usr/bin/env node
+/**
+ * pob2-mcp — MCP server for Path of Building 2.
+ *
+ * Phase 1 (always available): XML codec + typed parser. No PoB install needed.
+ * Phase 2 (opt-in via POB_FORK_PATH): persistent LuaJIT subprocess running
+ * the patched HeadlessWrapper.lua, exposing PoB2's real calc engine via stdio
+ * JSON-RPC. See docs/PORT_PLAN.md.
+ *
+ * Required env for Phase 2:
+ *   POB_FORK_PATH    Absolute Windows path to pob2-fork/src/ (the directory
+ *                    containing the patched HeadlessWrapper.lua).
+ *   POB_WSL_DISTRO   Optional. WSL distro name; defaults to the active distro.
+ *
+ * Hot reload: when POB2_HOT_RELOAD=1, codec/build modules re-import on src
+ * changes. The Lua bridge subprocess is NOT reloaded — that requires a
+ * server restart (Phase 2 calc state is expensive to rebuild).
+ */
+
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import { watch as chokidarWatch } from "chokidar";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { LuaBridge, LuaBridgeError, type LuaResponse } from "./luaBridge.js";
+import { searchNodes, getNode, resolveNodes, type TreeNodeType } from "./treeData.js";
+import { fetchBuild, FetchBuildError } from "./fetchBuild.js";
+import { findDeadNodes, simulateLevelUp, analyzeItemUpgrade } from "./theorycraft.js";
+import { searchGems, getGem, gemStats, type GemType } from "./gemData.js";
+
+const SERVER_NAME = "pob2-mcp";
+const SERVER_VERSION = "0.0.1";
+
+// ----- Reloadable module references ------------------------------------------
+
+type CodecMod = typeof import("./codec.js");
+type BuildMod = typeof import("./build.js");
+
+let codec: CodecMod;
+let buildMod: BuildMod;
+
+/**
+ * (Re)load the codec and build-parser modules.
+ *
+ * On first call: standard imports. On subsequent calls: cache-busted dynamic
+ * imports so Node treats them as fresh modules. The new exports replace the
+ * old ones; existing handler closures see the new code on their next call.
+ */
+async function loadModules(): Promise<void> {
+  const first = !codec;
+  if (first) {
+    codec = await import("./codec.js");
+    buildMod = await import("./build.js");
+  } else {
+    const v = Date.now();
+    codec = await import(`./codec.js?v=${v}`);
+    buildMod = await import(`./build.js?v=${v}`);
+  }
+}
+
+// ----- Tool catalog ----------------------------------------------------------
+
+const TOOLS = [
+  {
+    name: "decode_build_code",
+    description:
+      "Decode a PoB2 build code (the base64-encoded share string) into the underlying XML. " +
+      "Use this when the user pastes a build code and you need to see what's inside.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        buildCode: {
+          type: "string",
+          description: "The PoB2 build code, e.g. from pobb.in or a Maxroll share link.",
+        },
+      },
+      required: ["buildCode"],
+    },
+  },
+  {
+    name: "encode_build_code",
+    description:
+      "Encode a raw PoB2 XML payload back into a build code that can be imported into PoB2 or shared.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        xml: { type: "string", description: "The raw <PathOfBuilding>...</PathOfBuilding> XML." },
+      },
+      required: ["xml"],
+    },
+  },
+  {
+    name: "parse_build",
+    description:
+      "Decode and parse a PoB2 build code into a typed structure: character meta, passive trees, " +
+      "skill socket groups (gem links), and equipped items. The right tool for 'what's in this build?'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        buildCode: { type: "string", description: "The PoB2 build code." },
+      },
+      required: ["buildCode"],
+    },
+  },
+  {
+    name: "summarize_build",
+    description:
+      "Decode a PoB2 build code and return a high-level natural-language summary: class, " +
+      "ascendancy, level, main skill, key supports, item highlights. Use when a user shares a " +
+      "build and you want a quick overview before drilling in.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        buildCode: { type: "string", description: "The PoB2 build code." },
+      },
+      required: ["buildCode"],
+    },
+  },
+  // ----- Phase 2 tools (require POB_FORK_PATH + Lua bridge) -----
+  {
+    name: "lua_ping",
+    description:
+      "Health-check the PoB2 Lua bridge subprocess. Returns true if the calc engine is alive. " +
+      "Phase 2: only works if POB_FORK_PATH is configured.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "lua_load_build",
+    description:
+      "Load a PoB2 build code into the live calc engine. Use this BEFORE calling lua_get_stats " +
+      "to populate the build state. Phase 2 only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        buildCode: { type: "string", description: "PoB2 build code (URL-safe base64+zlib XML)." },
+        name: { type: "string", description: "Optional build name for the calc context (default 'API Build')." },
+      },
+      required: ["buildCode"],
+    },
+  },
+  {
+    name: "lua_get_stats",
+    description:
+      "Read the current build's offence/defence stats from PoB2's calc engine. Returns real " +
+      "Life/ES/Armour/Evasion/Resists/Mana/etc. as computed by PoB. Requires a build to be loaded " +
+      "first (use lua_load_build). Phase 2 only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fields: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Optional: limit the response to specific stat names (e.g. ['Life','TotalDPS']). " +
+            "If omitted, returns the default stat set.",
+        },
+      },
+    },
+  },
+  {
+    name: "lua_get_build_info",
+    description:
+      "Read top-level build metadata from the live calc engine: name, level, class, " +
+      "ascendancy, tree version. Phase 2 only.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "lua_get_tree",
+    description:
+      "Read the current build's passive tree from the live calc engine: allocated node IDs, " +
+      "class/ascendancy class IDs, tree version, mastery effects. Useful before lua_calc_with " +
+      "for planning node swaps.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "lua_get_skills",
+    description:
+      "Read the current build's skill setup: socket groups (gem links), main active skill, " +
+      "which group is configured as the DPS source. Phase 2 only.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "lua_get_items",
+    description:
+      "Read the current build's equipped items: name, baseName, type, rarity, raw mod text, " +
+      "and active flag for flasks/tinctures. By default returns ONLY equipped slots; set " +
+      "onlyEquipped=false to see every slot the build can have (empty included). Phase 2 only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        onlyEquipped: {
+          type: "boolean",
+          description: "If true (default), skip empty slots. Set false to enumerate all slots.",
+        },
+      },
+    },
+  },
+  {
+    name: "lua_get_config",
+    description:
+      "Read PoB calc configuration: enemy level, boss flags, charges, buff toggles. These " +
+      "settings affect DPS/EHP calculations. Phase 2 only.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "lua_calc_with",
+    description:
+      "Theorycraft what-if: recompute build stats with a HYPOTHETICAL set of node " +
+      "additions/removals, without persisting the change. Use this to answer 'what if I " +
+      "take node X instead of node Y?' — get back the hypothetical Life/DPS/EHP/etc. and " +
+      "compare against the current build's stats. Phase 2 only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        addNodes: {
+          type: "array",
+          items: { type: "number" },
+          description: "Passive node IDs to hypothetically allocate.",
+        },
+        removeNodes: {
+          type: "array",
+          items: { type: "number" },
+          description: "Passive node IDs to hypothetically deallocate.",
+        },
+        useFullDPS: {
+          type: "boolean",
+          description: "Use FullDPS (all skills combined) instead of main-skill DPS.",
+        },
+      },
+    },
+  },
+  {
+    name: "compare_builds",
+    description:
+      "Load two PoB2 build codes sequentially, compute stats for each, and return a side-by-side " +
+      "diff. Reports which stats improved, regressed, or stayed the same. Synthesized tool — uses " +
+      "the live calc engine internally. Phase 2 only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        buildCodeA: { type: "string", description: "First build code (baseline)." },
+        buildCodeB: { type: "string", description: "Second build code (comparison)." },
+        labelA: { type: "string", description: "Optional label for build A (default 'A')." },
+        labelB: { type: "string", description: "Optional label for build B (default 'B')." },
+      },
+      required: ["buildCodeA", "buildCodeB"],
+    },
+  },
+  // ----- Phase 4A: Tree-node metadata (static data, no Lua bridge needed) ----
+  {
+    name: "search_tree_nodes",
+    description:
+      "Search the PoE2 passive tree by node name (and optionally stats). Returns ranked results " +
+      "with each node's ID, name, type (keystone/notable/normal/ascendancy-*), and stat lines. " +
+      "Use this to translate human queries like 'Hollow Palm' into node IDs you can pass to " +
+      "lua_calc_with. Requires POB_FORK_PATH (uses static TreeData/<version>/tree.json).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search term (e.g. 'Hollow Palm', 'attack speed')." },
+        treeVersion: { type: "string", description: "Tree version (default '0_4')." },
+        types: {
+          type: "array",
+          items: { type: "string", enum: ["keystone", "notable", "normal", "ascendancy-notable", "ascendancy-normal", "jewel-socket", "class-start", "mastery"] },
+          description: "Restrict to these node types.",
+        },
+        ascendancy: { type: "string", description: "Restrict to a specific ascendancy class name (e.g. 'Invoker', 'Pathfinder')." },
+        matchStats: { type: "boolean", description: "Also match against stat text (slower but useful for 'find me all evasion nodes')." },
+        limit: { type: "number", description: "Max results (default 20)." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_tree_node",
+    description:
+      "Look up a single passive tree node by its numeric ID. Returns name, stats, type, " +
+      "ascendancy (if applicable). Use this to identify a node you got from lua_get_tree.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "number", description: "Node ID." },
+        treeVersion: { type: "string", description: "Tree version (default '0_4')." },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "resolve_tree_nodes",
+    description:
+      "Bulk-resolve a list of node IDs to their names + types + stats. Useful for translating " +
+      "a lua_get_tree response into a human-readable build summary.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ids: { type: "array", items: { type: "number" }, description: "Node IDs to resolve." },
+        treeVersion: { type: "string", description: "Tree version (default '0_4')." },
+      },
+      required: ["ids"],
+    },
+  },
+  // ----- Phase 4B: URL fetcher ----------------------------------------------
+  {
+    name: "fetch_build_from_url",
+    description:
+      "Resolve a pobb.in URL (or a raw build code) into a build code ready for parse_build / " +
+      "lua_load_build. Saves users from pasting 5000+ char base64 strings into chat. Accepts " +
+      "URLs like 'https://pobb.in/abc123' or 'pobb.in/abc123/raw', or a raw build-code string " +
+      "(returned as-is). Only pobb.in supported initially.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "pobb.in URL or raw build code." },
+      },
+      required: ["url"],
+    },
+  },
+  // ----- Phase 4D: Mutation tools (modify loaded build state) ---------------
+  {
+    name: "lua_set_level",
+    description:
+      "Set the character level on the loaded build and recompute stats. Useful for projecting " +
+      "stats at endgame (e.g. set level 90 to see what a leveling build looks like maxed out).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        level: { type: "number", description: "Character level (1-100)." },
+      },
+      required: ["level"],
+    },
+  },
+  {
+    name: "lua_set_config",
+    description:
+      "Update PoB calc config — boss level, charges, buff flags — and recompute. Affects DPS/EHP.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enemyLevel: { type: "number", description: "Override enemy level for calcs." },
+        bandit: { type: "string", description: "PoE1 bandit reward (may be unused in PoE2)." },
+        pantheonMajorGod: { type: "string" },
+        pantheonMinorGod: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "lua_update_tree_delta",
+    description:
+      "PERSIST a tree change to the loaded build: add and/or remove a list of node IDs. Unlike " +
+      "lua_calc_with (which is transient), this actually mutates the build state. Recomputes " +
+      "stats. Useful for committing to a node swap after theorycrafting it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        addNodes: { type: "array", items: { type: "number" } },
+        removeNodes: { type: "array", items: { type: "number" } },
+        classId: { type: "number" },
+        ascendClassId: { type: "number" },
+        secondaryAscendClassId: { type: "number" },
+        treeVersion: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "lua_add_item_text",
+    description:
+      "Add an item to the build by pasting its raw item text (the in-game copy-paste format). " +
+      "Optionally equip it to a specific slot. Useful for 'add this Mageblood and see what it does'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "Raw item text in PoE in-game copy-paste format." },
+        slotName: { type: "string", description: "Optional slot to equip to (e.g. 'Belt')." },
+        noAutoEquip: { type: "boolean", description: "If true, just add to inventory without equipping." },
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "lua_set_gem_level",
+    description:
+      "Set the level of a specific gem in a socket group. Use lua_get_skills to find the " +
+      "groupIndex and gemIndex first. Recomputes stats.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        groupIndex: { type: "number", description: "1-based index from lua_get_skills.groups[].index" },
+        gemIndex: { type: "number", description: "1-based index from gems[].index" },
+        level: { type: "number" },
+      },
+      required: ["groupIndex", "gemIndex", "level"],
+    },
+  },
+  {
+    name: "lua_set_gem_quality",
+    description: "Set a gem's quality % (0-20+ in PoE2). Recomputes stats.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        groupIndex: { type: "number" },
+        gemIndex: { type: "number" },
+        quality: { type: "number" },
+        qualityId: { type: "string", description: "Optional quality type (e.g. 'Default')." },
+      },
+      required: ["groupIndex", "gemIndex", "quality"],
+    },
+  },
+  {
+    name: "lua_export_build_code",
+    description:
+      "Serialize the current build state (with any mutations applied) back to a PoB2 build code, " +
+      "ready to share via pobb.in or import into PoB2 directly.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  // ----- Phase 4E: synthesized theorycraft tools ----------------------------
+  {
+    name: "find_dead_nodes",
+    description:
+      "For each allocated passive node, recompute the build's stats with that node hypothetically " +
+      "removed. Ranks nodes by 'dead weight' — those whose removal barely affects DPS/EHP/Life " +
+      "are candidates for refunding. Runs lua_calc_with once per node; expect ~1s for a 17-node " +
+      "build. Does NOT persist changes (uses calc_with's transient mode).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        stats: {
+          type: "array",
+          items: { type: "string" },
+          description: "Which stats to sample (default: TotalDPS, CombinedDPS, Life, TotalEHP, Speed).",
+        },
+        nodeIds: {
+          type: "array",
+          items: { type: "number" },
+          description: "Subset of allocated nodes to probe (default: all).",
+        },
+        limit: { type: "number", description: "Cap the candidate list length." },
+        treeVersion: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "simulate_level_up",
+    description:
+      "Compute stat sheets at a sequence of character levels (e.g. [60, 80, 90, 100]) without " +
+      "permanently changing the build. Returns each sample plus the original level it restored to.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        levels: {
+          type: "array",
+          items: { type: "number" },
+          description: "Levels to sample. E.g. [60, 80, 90, 100].",
+        },
+        stats: {
+          type: "array",
+          items: { type: "string" },
+          description: "Stats to sample at each level.",
+        },
+      },
+      required: ["levels"],
+    },
+  },
+  // ----- Phase 5B: Gem database (static, no Lua bridge needed) -----
+  {
+    name: "search_gems",
+    description:
+      "Search PoE2 skill + support gems by name (and optionally tag). Returns ranked results " +
+      "with each gem's id, name, type (Spell/Attack/Support/Minion/Mark/Buff/Warcry/Banner/etc.), " +
+      "tags, stat requirements, tier. Use this to find gem names → lua_add_gem-able identifiers. " +
+      "903 gems in the PoE2 0_4 dataset.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search term (e.g. 'Tempest Bell', 'lightning')." },
+        gemType: {
+          type: "string",
+          description: "Restrict by gem type: Spell, Attack, Support, Minion, Mark, Buff, Warcry, Banner, Shapeshift, Totem.",
+        },
+        tag: { type: "string", description: "Restrict by tag (e.g. 'lightning', 'melee', 'projectile')." },
+        matchTags: { type: "boolean", description: "Also match against tagString text." },
+        supportOnly: { type: "boolean", description: "Return only support gems." },
+        activeOnly: { type: "boolean", description: "Return only active-skill gems (no supports)." },
+        limit: { type: "number", description: "Max results (default 20)." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_gem",
+    description:
+      "Look up a gem by id (Metadata/...) or by exact name. Returns full metadata: tags, " +
+      "stat requirements, gem family, tier, natural max level.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        idOrName: { type: "string", description: "Gem id (Metadata/Items/Gems/...) or exact name." },
+      },
+      required: ["idOrName"],
+    },
+  },
+  {
+    name: "gem_database_stats",
+    description:
+      "Get aggregate statistics about the gem database: total count, breakdown by gem type, " +
+      "unique tag count. Useful sanity-check / overview.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  // ----- Phase 5C: Item analysis -----
+  {
+    name: "lua_parse_item_text",
+    description:
+      "Parse a PoE2 item text (in-game copy-paste format) into structured fields — name, base, " +
+      "rarity, requirements, mod lists — WITHOUT adding it to the build. Useful for inspecting " +
+      "items before deciding to equip them. Phase 2 (Lua bridge).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "Raw item text in PoE2 in-game copy-paste format." },
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "analyze_item_upgrade",
+    description:
+      "What-if for items: snapshot current stats, equip the item, snapshot again, then roll " +
+      "back the build state. Returns stat deltas (Life, DPS, EHP, etc.) so you can decide if " +
+      "an item is an upgrade. Phase 2 — requires a build to be loaded first.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        itemText: { type: "string", description: "Raw item text in PoE2 paste format." },
+        slotName: { type: "string", description: "Optional slot to equip (e.g. 'Belt'). Defaults to auto." },
+        stats: {
+          type: "array",
+          items: { type: "string" },
+          description: "Stats to sample (default: TotalDPS, Life, TotalEHP, etc.).",
+        },
+      },
+      required: ["itemText"],
+    },
+  },
+] as const;
+
+// ----- Server setup ----------------------------------------------------------
+
+await loadModules();
+
+const server = new Server(
+  { name: SERVER_NAME, version: SERVER_VERSION },
+  // Declare tools.listChanged so the client honors our hot-reload notifications
+  { capabilities: { tools: { listChanged: true } } }
+);
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+
+server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  const { name, arguments: args } = req.params;
+  try {
+    switch (name) {
+      case "decode_build_code":
+        return ok({ xml: codec.decodeBuildCode(str(args, "buildCode")) });
+
+      case "encode_build_code":
+        return ok({ buildCode: codec.encodeBuildCode(str(args, "xml")) });
+
+      case "parse_build": {
+        const xml = codec.decodeBuildCode(str(args, "buildCode"));
+        return ok(buildMod.parseBuildXml(xml));
+      }
+
+      case "summarize_build": {
+        const xml = codec.decodeBuildCode(str(args, "buildCode"));
+        const build = buildMod.parseBuildXml(xml);
+        return ok({ summary: summarize(build), build });
+      }
+
+      // ----- Phase 2: live calc engine via Lua bridge -----
+      case "lua_ping": {
+        const b = await ensureBridge();
+        const pong = await b.ping();
+        return ok({ alive: pong });
+      }
+      case "lua_load_build": {
+        const b = await ensureBridge();
+        const buildCode = str(args, "buildCode");
+        const xml = codec.decodeBuildCode(buildCode);
+        const buildName =
+          (args as Record<string, unknown> | undefined)?.name as string | undefined;
+        const r = await b.send({
+          action: "load_build_xml",
+          params: { xml, name: buildName ?? "API Build" },
+        });
+        return luaResponseTo(r);
+      }
+      case "lua_get_stats": {
+        const b = await ensureBridge();
+        const fields = (args as Record<string, unknown> | undefined)?.fields;
+        const r = await b.send({
+          action: "get_stats",
+          params: Array.isArray(fields) ? { fields } : {},
+        });
+        return luaResponseTo(r);
+      }
+      case "lua_get_build_info": {
+        const b = await ensureBridge();
+        const r = await b.send({ action: "get_build_info" });
+        return luaResponseTo(r);
+      }
+      case "lua_get_tree": {
+        const b = await ensureBridge();
+        const r = await b.send({ action: "get_tree" });
+        return luaResponseTo(r);
+      }
+      case "lua_get_skills": {
+        const b = await ensureBridge();
+        const r = await b.send({ action: "get_skills" });
+        return luaResponseTo(r);
+      }
+      case "lua_get_items": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const params: Record<string, unknown> = {};
+        if (typeof a.onlyEquipped === "boolean") params.onlyEquipped = a.onlyEquipped;
+        const r = await b.send({ action: "get_items", params });
+        return luaResponseTo(r);
+      }
+      case "lua_get_config": {
+        const b = await ensureBridge();
+        const r = await b.send({ action: "get_config" });
+        return luaResponseTo(r);
+      }
+      case "lua_calc_with": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const params: Record<string, unknown> = {};
+        if (Array.isArray(a.addNodes)) params.addNodes = a.addNodes;
+        if (Array.isArray(a.removeNodes)) params.removeNodes = a.removeNodes;
+        if (typeof a.useFullDPS === "boolean") params.useFullDPS = a.useFullDPS;
+        const r = await b.send({ action: "calc_with", params });
+        return luaResponseTo(r);
+      }
+      case "compare_builds": {
+        return ok(await compareBuilds(args));
+      }
+      case "search_tree_nodes": {
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const fp = requireForkPath();
+        const results = searchNodes(
+          fp,
+          String(a.query ?? ""),
+          {
+            limit: typeof a.limit === "number" ? a.limit : undefined,
+            types: Array.isArray(a.types) ? (a.types as TreeNodeType[]) : undefined,
+            ascendancy: typeof a.ascendancy === "string" ? a.ascendancy : undefined,
+            matchStats: a.matchStats === true,
+          },
+          typeof a.treeVersion === "string" ? a.treeVersion : undefined
+        );
+        return ok({ count: results.length, results });
+      }
+      case "get_tree_node": {
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const id = Number(a.id);
+        if (!Number.isFinite(id)) return err("id must be a number");
+        const fp = requireForkPath();
+        const node = getNode(fp, id, typeof a.treeVersion === "string" ? a.treeVersion : undefined);
+        return node ? ok({ node }) : err(`No tree node with id ${id}`);
+      }
+      case "resolve_tree_nodes": {
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        if (!Array.isArray(a.ids)) return err("ids must be an array of numbers");
+        const fp = requireForkPath();
+        const nodes = resolveNodes(fp, a.ids as number[], typeof a.treeVersion === "string" ? a.treeVersion : undefined);
+        return ok({ count: nodes.length, nodes });
+      }
+      case "fetch_build_from_url": {
+        const u = str(args, "url");
+        const result = await fetchBuild(u);
+        return ok(result);
+      }
+
+      // ----- Phase 4D mutation tools -----
+      case "lua_set_level": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const level = Number(a.level);
+        if (!Number.isFinite(level)) return err("level must be a number");
+        const r = await b.send({ action: "set_level", params: { level } });
+        return luaResponseTo(r);
+      }
+      case "lua_set_config": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const r = await b.send({ action: "set_config", params: a });
+        return luaResponseTo(r);
+      }
+      case "lua_update_tree_delta": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const r = await b.send({ action: "update_tree_delta", params: a });
+        return luaResponseTo(r);
+      }
+      case "lua_add_item_text": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const text = String(a.text ?? "");
+        if (!text) return err("text is required");
+        const params: Record<string, unknown> = { text };
+        if (typeof a.slotName === "string") params.slotName = a.slotName;
+        if (typeof a.noAutoEquip === "boolean") params.noAutoEquip = a.noAutoEquip;
+        const r = await b.send({ action: "add_item_text", params });
+        return luaResponseTo(r);
+      }
+      case "lua_set_gem_level": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const r = await b.send({
+          action: "set_gem_level",
+          params: {
+            groupIndex: Number(a.groupIndex),
+            gemIndex: Number(a.gemIndex),
+            level: Number(a.level),
+          },
+        });
+        return luaResponseTo(r);
+      }
+      case "lua_set_gem_quality": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const params: Record<string, unknown> = {
+          groupIndex: Number(a.groupIndex),
+          gemIndex: Number(a.gemIndex),
+          quality: Number(a.quality),
+        };
+        if (typeof a.qualityId === "string") params.qualityId = a.qualityId;
+        const r = await b.send({ action: "set_gem_quality", params });
+        return luaResponseTo(r);
+      }
+      case "lua_export_build_code": {
+        const b = await ensureBridge();
+        const r = await b.send({ action: "export_build_xml" });
+        if (r.ok === false) return err(typeof r.error === "string" ? r.error : "export failed");
+        const xml = String(r.xml ?? "");
+        if (!xml) return err("export returned empty XML");
+        const buildCode = codec.encodeBuildCode(xml);
+        return ok({ buildCode, xmlLength: xml.length });
+      }
+
+      // ----- Phase 4E synthesized theorycraft tools -----
+      case "find_dead_nodes": {
+        const b = await ensureBridge();
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const result = await findDeadNodes(b, fp, {
+          stats: Array.isArray(a.stats) ? (a.stats as string[]) : undefined,
+          nodeIds: Array.isArray(a.nodeIds) ? (a.nodeIds as number[]) : undefined,
+          limit: typeof a.limit === "number" ? a.limit : undefined,
+          treeVersion: typeof a.treeVersion === "string" ? a.treeVersion : undefined,
+        });
+        return ok(result);
+      }
+      case "simulate_level_up": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        if (!Array.isArray(a.levels)) return err("levels must be an array of numbers");
+        const result = await simulateLevelUp(b, a.levels as number[], {
+          stats: Array.isArray(a.stats) ? (a.stats as string[]) : undefined,
+        });
+        return ok(result);
+      }
+      // ----- Phase 5B gem database -----
+      case "search_gems": {
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const results = searchGems(fp, String(a.query ?? ""), {
+          limit: typeof a.limit === "number" ? a.limit : undefined,
+          gemType: typeof a.gemType === "string" ? (a.gemType as GemType) : undefined,
+          tag: typeof a.tag === "string" ? a.tag : undefined,
+          matchTags: a.matchTags === true,
+          supportOnly: a.supportOnly === true,
+          activeOnly: a.activeOnly === true,
+        });
+        return ok({ count: results.length, results });
+      }
+      case "get_gem": {
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const gem = getGem(fp, String(a.idOrName ?? ""));
+        return gem ? ok({ gem }) : err(`No gem found for: ${a.idOrName}`);
+      }
+      case "gem_database_stats": {
+        const fp = requireForkPath();
+        return ok(gemStats(fp));
+      }
+      // ----- Phase 5C item analysis -----
+      case "lua_parse_item_text": {
+        const b = await ensureBridge();
+        const text = str(args, "text");
+        const r = await b.send({ action: "parse_item_text", params: { text } });
+        return luaResponseTo(r);
+      }
+      case "analyze_item_upgrade": {
+        const b = await ensureBridge();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const itemText = String(a.itemText ?? "");
+        if (!itemText) return err("itemText is required");
+        const result = await analyzeItemUpgrade(b, {
+          itemText,
+          slotName: typeof a.slotName === "string" ? a.slotName : undefined,
+          stats: Array.isArray(a.stats) ? (a.stats as string[]) : undefined,
+        });
+        return ok(result);
+      }
+
+      default:
+        return err(`Unknown tool: ${name}`);
+    }
+  } catch (e) {
+    // Check by error name (not instanceof) so reloaded classes still match.
+    if (e instanceof Error && e.name === "BuildCodecError") {
+      return err(`Build codec error: ${e.message}`);
+    }
+    if (e instanceof LuaBridgeError) {
+      return err(`Lua bridge: ${e.message}`);
+    }
+    if (e instanceof FetchBuildError) {
+      return err(`Fetch error: ${e.message}`);
+    }
+    return err(e instanceof Error ? e.message : String(e));
+  }
+});
+
+// ----- Hot reload (opt-in) ---------------------------------------------------
+
+if (process.env.POB2_HOT_RELOAD === "1") {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // tsx serves .ts files directly — watch the source dir, not the build dir.
+  // Try src/ first; if we're running compiled JS from build/, watch this dir.
+  const srcDir = path.resolve(here, "..", "src");
+  const watchDir = fileURLToPath(import.meta.url).includes(`${path.sep}src${path.sep}`)
+    ? srcDir
+    : here;
+
+  let pending = false;
+  let scheduled: NodeJS.Timeout | null = null;
+
+  const reload = async (reason: string) => {
+    if (pending) return;
+    pending = true;
+    try {
+      await loadModules();
+      // Tell the client the tool list may have changed. Even though our 4 tools
+      // are static today, this is the right signal for code changes — and once
+      // we add dynamic tool registration, the same path supports it.
+      await server.notification({ method: "notifications/tools/list_changed" });
+      console.error(`[hot-reload] reloaded (${reason})`);
+    } catch (e) {
+      console.error("[hot-reload] failed:", e);
+    } finally {
+      pending = false;
+    }
+  };
+
+  const watcher = chokidarWatch(watchDir, {
+    ignoreInitial: true,
+    // Watch source files; skip our own entry point (can't reload ourselves).
+    ignored: (p: string) =>
+      /node_modules/.test(p) ||
+      /\.git/.test(p) ||
+      /\bindex\.(ts|js)$/.test(p),
+  });
+
+  watcher.on("change", (filepath: string) => {
+    // Debounce: editors often write multiple times in quick succession.
+    if (scheduled) clearTimeout(scheduled);
+    scheduled = setTimeout(() => {
+      scheduled = null;
+      void reload(path.basename(filepath));
+    }, 150);
+  });
+
+  console.error(`[hot-reload] watching ${watchDir}`);
+}
+
+// ----- Lua-side hot reload (recycle bridge on .lua changes) -----------------
+
+if (process.env.POB2_HOT_RELOAD === "1" && process.env.POB_FORK_PATH) {
+  const apiDir = path.join(process.env.POB_FORK_PATH, "API");
+  const wrapperPath = path.join(process.env.POB_FORK_PATH, "HeadlessWrapper.lua");
+  const luaWatcher = chokidarWatch([apiDir, wrapperPath], {
+    ignoreInitial: true,
+    ignored: (p: string) => /node_modules/.test(p) || /\.git/.test(p),
+  });
+
+  let scheduled: NodeJS.Timeout | null = null;
+  luaWatcher.on("change", (filepath: string) => {
+    if (!filepath.endsWith(".lua")) return;
+    if (scheduled) clearTimeout(scheduled);
+    scheduled = setTimeout(() => {
+      scheduled = null;
+      void recycleBridge(`lua change: ${path.basename(filepath)}`);
+    }, 200);
+  });
+
+  console.error(`[lua-bridge] auto-recycle on .lua change in ${apiDir}`);
+}
+
+// ----- Helpers ---------------------------------------------------------------
+
+function str(args: unknown, key: string): string {
+  const v = (args as Record<string, unknown> | undefined)?.[key];
+  if (typeof v !== "string") {
+    throw new Error(`Missing or non-string argument: ${key}`);
+  }
+  return v;
+}
+
+function ok(payload: unknown) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+  };
+}
+
+function err(message: string) {
+  return {
+    isError: true,
+    content: [{ type: "text" as const, text: message }],
+  };
+}
+
+function summarize(build: import("./build.js").PoB2Build): string {
+  const m = build.meta;
+  const mainGroup =
+    m.mainSocketGroup != null ? build.skills[m.mainSocketGroup - 1] : null;
+  const mainSkill =
+    mainGroup?.gems.find((g) => !g.support)?.name ?? "(no main skill set)";
+  const supports = mainGroup?.gems.filter((g) => g.support).map((g) => g.name) ?? [];
+  const treeNodes = build.trees[0]?.nodes.length ?? 0;
+  const itemCount = build.items.length;
+
+  return [
+    `${m.className} / ${m.ascendClassName}, level ${m.level}`,
+    `Main skill: ${mainSkill}${supports.length ? ` + ${supports.join(", ")}` : ""}`,
+    `Passive nodes allocated: ${treeNodes}`,
+    `Equipped items: ${itemCount}`,
+    m.version ? `PoB2 version: ${m.version}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+// ----- Lua bridge (lazy singleton; Phase 2 only) -----------------------------
+
+let bridge: LuaBridge | null = null;
+let bridgeInit: Promise<LuaBridge> | null = null;
+
+/**
+ * Kill the current Lua bridge (if any) so the next ensureBridge() call spawns
+ * a fresh one. Used by the Lua-side hot reload watcher when BuildOps.lua or
+ * HeadlessWrapper.lua changes.
+ */
+async function recycleBridge(reason: string): Promise<void> {
+  if (!bridge && !bridgeInit) return;
+  console.error(`[lua-bridge] recycling (${reason})`);
+  const prev = bridge;
+  bridge = null;
+  bridgeInit = null;
+  if (prev) {
+    try { await prev.stop(); } catch { /* ignore */ }
+  }
+}
+
+async function ensureBridge(): Promise<LuaBridge> {
+  if (bridge?.isAlive()) return bridge;
+  if (bridgeInit) return bridgeInit;
+
+  const forkPath = process.env.POB_FORK_PATH;
+  if (!forkPath) {
+    throw new LuaBridgeError(
+      "POB_FORK_PATH not set. Phase 2 tools require the env var to point at " +
+        "pob2-fork/src/ (the directory containing the patched HeadlessWrapper.lua)."
+    );
+  }
+
+  bridgeInit = (async () => {
+    const b = new LuaBridge({
+      forkPath,
+      wslDistro: process.env.POB_WSL_DISTRO,
+      timeoutMs: process.env.POB_TIMEOUT_MS ? parseInt(process.env.POB_TIMEOUT_MS, 10) : undefined,
+    });
+    console.error(`[lua-bridge] starting (forkPath=${forkPath})`);
+    const t0 = Date.now();
+    await b.start();
+    console.error(`[lua-bridge] ready after ${Date.now() - t0}ms`);
+    bridge = b;
+    return b;
+  })().finally(() => {
+    bridgeInit = null;
+  });
+
+  return bridgeInit;
+}
+
+/** Throws if POB_FORK_PATH isn't set — required for static tree-data tools too. */
+function requireForkPath(): string {
+  const fp = process.env.POB_FORK_PATH;
+  if (!fp) {
+    throw new Error(
+      "POB_FORK_PATH not set. This tool reads PoB2 tree data from " +
+        "$POB_FORK_PATH/TreeData/<version>/tree.json."
+    );
+  }
+  return fp;
+}
+
+/** Map a raw Lua response into an MCP tool result, surfacing errors as isError. */
+function luaResponseTo(r: LuaResponse) {
+  if (r.ok === false) return err(typeof r.error === "string" ? r.error : "Lua bridge error");
+  // strip the ok field for cleaner output to the LLM
+  const { ok: _ok, ...rest } = r;
+  void _ok;
+  return ok(rest);
+}
+
+/**
+ * Load two builds sequentially through the live calc engine and produce a
+ * structured diff. We load A, snapshot its stats, load B, snapshot its stats,
+ * then compute per-stat deltas. Numeric stats get absolute + percent deltas;
+ * non-numeric stats just get the before/after values.
+ */
+async function compareBuilds(args: unknown) {
+  const a = (args as Record<string, unknown> | undefined) ?? {};
+  const codeA = a.buildCodeA;
+  const codeB = a.buildCodeB;
+  if (typeof codeA !== "string" || typeof codeB !== "string") {
+    throw new Error("compare_builds requires string buildCodeA and buildCodeB");
+  }
+  const labelA = typeof a.labelA === "string" ? a.labelA : "A";
+  const labelB = typeof a.labelB === "string" ? a.labelB : "B";
+
+  const b = await ensureBridge();
+  const xmlA = codec.decodeBuildCode(codeA);
+  const xmlB = codec.decodeBuildCode(codeB);
+
+  const loadA = await b.send({ action: "load_build_xml", params: { xml: xmlA, name: labelA } });
+  if (loadA.ok === false) throw new Error(`Failed to load ${labelA}: ${loadA.error}`);
+  const statsA = (await b.send({ action: "get_stats" })).stats as Record<string, unknown>;
+
+  const loadB = await b.send({ action: "load_build_xml", params: { xml: xmlB, name: labelB } });
+  if (loadB.ok === false) throw new Error(`Failed to load ${labelB}: ${loadB.error}`);
+  const statsB = (await b.send({ action: "get_stats" })).stats as Record<string, unknown>;
+
+  // Compute the diff
+  const keys = new Set([...Object.keys(statsA ?? {}), ...Object.keys(statsB ?? {})]);
+  keys.delete("_meta");
+  const diff: Record<string, unknown> = {};
+  let improved = 0;
+  let regressed = 0;
+  let unchanged = 0;
+  for (const k of [...keys].sort()) {
+    const va = statsA?.[k];
+    const vb = statsB?.[k];
+    if (typeof va === "number" && typeof vb === "number") {
+      const delta = vb - va;
+      const pct = va !== 0 ? (delta / Math.abs(va)) * 100 : null;
+      diff[k] = {
+        [labelA]: round(va),
+        [labelB]: round(vb),
+        delta: round(delta),
+        pct: pct != null ? round(pct, 1) : null,
+      };
+      if (delta > 0.0001) improved++;
+      else if (delta < -0.0001) regressed++;
+      else unchanged++;
+    } else if (va !== vb) {
+      diff[k] = { [labelA]: va, [labelB]: vb };
+    }
+  }
+
+  return {
+    summary: {
+      [labelA]: statsA?._meta ?? null,
+      [labelB]: statsB?._meta ?? null,
+      improved,
+      regressed,
+      unchanged,
+    },
+    diff,
+  };
+}
+
+function round(n: number, places = 4): number {
+  const m = Math.pow(10, places);
+  return Math.round(n * m) / m;
+}
+
+// ----- Entry point -----------------------------------------------------------
+
+// Clean shutdown of the Lua bridge on signals
+const shutdown = async () => {
+  if (bridge) {
+    console.error("[lua-bridge] stopping...");
+    try {
+      await bridge.stop();
+    } catch {
+      /* ignore */
+    }
+  }
+  process.exit(0);
+};
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+console.error(
+  `[${SERVER_NAME} v${SERVER_VERSION}] ready on stdio` +
+    (process.env.POB2_HOT_RELOAD === "1" ? " (hot-reload on)" : "") +
+    (process.env.POB_FORK_PATH ? ` (lua bridge available)` : ` (Phase 1 only — POB_FORK_PATH not set)`)
+);
