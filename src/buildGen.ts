@@ -33,8 +33,9 @@ import type { LuaBridge } from "./luaBridge.js";
 import { findClass, findAscendancy, type Ascendancy } from "./classes.js";
 import { loadTree, type TreeNode } from "./treeData.js";
 import { getGem } from "./gemData.js";
-import { suggestGemLink } from "./theorycraft.js";
+import { suggestGemLink, suggestNodeSwaps } from "./theorycraft.js";
 import { encodeBuildCode } from "./codec.js";
+import { generateGear } from "./gearGen.js";
 
 export type OptimisationGoal = "dps" | "life" | "hybrid" | "defence";
 
@@ -55,17 +56,26 @@ export interface SynthesizeBuildOptions {
   /** Stat axis for greedy ranking. Default "dps". */
   goal?: OptimisationGoal;
   /**
-   * If true, the final ~10 allocations switch from stat-text heuristic to
-   * real calc-delta via suggest_node_swaps. Slower but tunes the build.
-   * Default: false (keep synthesis under ~15s).
+   * If true, after the initial stat-text allocation + gear + skills, run a
+   * final calc-based refinement pass over the last K allocations using
+   * suggest_node_swaps. Now that gear+skill produce real DPS, this lets us
+   * swap dead allocations for measurable upgrades. Default true.
    */
   refineWithCalc?: boolean;
+  /** Cap on calc refinement swaps. Default 8. */
+  refineSwapLimit?: number;
   /** Number of supports to add to the main socket group. Default 3. */
   supportCount?: number;
   /** Gem level for the main skill + supports. Default 20. */
   gemLevel?: number;
   /** Slot to place the main socket group. Default "Weapon 1". */
   slot?: string;
+  /**
+   * If false, skip placeholder gear scaffolding. Build will have no gear and
+   * DPS will be ~0; use only when the caller intends to fill items separately.
+   * Default true.
+   */
+  generateGear?: boolean;
 }
 
 export interface SynthesizeBuildResult {
@@ -84,6 +94,10 @@ export interface SynthesizeBuildResult {
     supports: string[];
     finalDPS?: number;
     finalLife?: number;
+    /** Per-slot list of equipped items, for the log. */
+    equippedSlots?: string[];
+    /** Number of calc-refinement swaps applied. */
+    calcRefineSwaps?: number;
   };
   /** Step-by-step log of what we did. Helpful when synthesis disappoints. */
   log: string[];
@@ -252,10 +266,11 @@ async function addSkillLoadout(
   if (addMain.ok === false) throw new Error(`add_gem(main): ${addMain.error}`);
   log.push(`  added main: ${mainGem.name} L${gemLevel}`);
 
-  // Set this group as main so suggest_gem_link targets it
+  // Set this group as main so suggest_gem_link targets it.
+  // NOTE: the action expects `mainSocketGroup`, not `groupIndex`.
   const setMain = await bridge.send({
     action: "set_main_selection",
-    params: { groupIndex },
+    params: { mainSocketGroup: groupIndex },
   });
   if (setMain.ok === false) log.push(`  warn: set_main_selection failed (${setMain.error})`);
 
@@ -335,12 +350,18 @@ export async function synthesizeBuild(
   const reset = await bridge.send({ action: "new_build" });
   if (reset.ok === false) throw new Error(`new_build: ${reset.error}`);
 
-  // 2. Set class + ascendancy via update_tree_delta
+  // 2. Set class + ascendancy.
+  //
+  // CRITICAL: PoB's PassiveSpec.lua line 318-321 overwrites any passed
+  // ascendClassId when className is set, looking it up via ascendNameMap
+  // instead. So pass the ASCENDANCY name (not the base class name) when an
+  // ascendancy is selected — PoB then resolves both classId AND ascendClassId,
+  // and auto-allocates the ascendancy start node.
+  const classNameToSend = ascendancy ? ascendancy.name : className;
   const utd = await bridge.send({
     action: "update_tree_delta",
     params: {
-      className,
-      ascendClassId: ascendancy?.ascendClassId ?? 0,
+      className: classNameToSend,
       addNodes: [],
     },
   });
@@ -353,7 +374,7 @@ export async function synthesizeBuild(
   const sl = await bridge.send({ action: "set_level", params: { level } });
   if (sl.ok === false) throw new Error(`set_level: ${sl.error}`);
 
-  // 4. Tree allocation
+  // 4. Tree allocation (stat-text heuristic — calc DPS still 0 here)
   const { allocated, pointsSpent } = await greedyAllocateTree(
     bridge,
     forkPath,
@@ -364,7 +385,37 @@ export async function synthesizeBuild(
   );
   log.push(`Tree allocation done: ${pointsSpent} points spent, ${allocated.size} total nodes`);
 
-  // 5. Skill loadout (optional)
+  // 5. Gear scaffolding — placeholder Rares for all slots so DPS calc works.
+  //    Runs before skill setup so suggest_gem_link's supports get measurable
+  //    deltas (otherwise baseline=0 and every support is Δ=0).
+  const equippedSlots: string[] = [];
+  if (opts.generateGear !== false) {
+    const caster = ["witch", "sorceress"].includes(className.toLowerCase());
+    const gear = generateGear(forkPath, { className, level, caster });
+    log.push(`Equipping ${gear.length} placeholder rares...`);
+    for (const item of gear) {
+      const r = await bridge.send({
+        action: "add_item_text",
+        params: { text: item.text, equip: item.equip, slot: item.slot },
+      });
+      if (r.ok === false) {
+        log.push(`  ✗ ${item.slot}: ${r.error}`);
+      } else {
+        equippedSlots.push(item.slot);
+      }
+    }
+    log.push(`Gear equipped: ${equippedSlots.length}/${gear.length} slots`);
+    const preSkillStats = ((await bridge.send({ action: "get_stats" })).stats ?? {}) as Record<string, number>;
+    const preSkillSk = ((await bridge.send({ action: "get_skills" })).skills ?? {}) as {
+      groups?: unknown[]; mainSocketGroup?: number;
+    };
+    log.push(
+      `Pre-skill: DPS=${preSkillStats.TotalDPS ?? 0}, Life=${preSkillStats.Life ?? 0}, ` +
+      `groups=${(preSkillSk.groups ?? []).length}, mainSocketGroup=${preSkillSk.mainSocketGroup}`,
+    );
+  }
+
+  // 7. Skill loadout (optional)
   let skillResult: { mainSkill: string; supports: string[] } | null = null;
   if (opts.mainSkillName) {
     try {
@@ -382,7 +433,56 @@ export async function synthesizeBuild(
     }
   }
 
-  // 6. Export
+  // 8. Calc-based refinement pass.
+  //    With gear + skill in place, TotalDPS is now > 0. Use suggest_node_swaps
+  //    to identify dead allocations and swap them for measurable upgrades.
+  //    This is where the build actually becomes good — the stat-text heuristic
+  //    picks reasonable nodes but doesn't know about synergy.
+  let calcRefineSwaps = 0;
+  const refine = opts.refineWithCalc !== false && skillResult != null;
+  const refineLimit = opts.refineSwapLimit ?? 8;
+  if (refine) {
+    try {
+      const swap = await suggestNodeSwaps(bridge, forkPath, {
+        targetMetric: goal === "life" ? "Life" : "TotalDPS",
+        maxDepth: 2,
+        maxCandidates: 30,
+        limit: refineLimit,
+      });
+      log.push(
+        `Calc refine: baseline=${swap.baseline}, ${swap.proposals.length} candidate swaps ` +
+        `(top delta=${swap.proposals[0]?.delta ?? 0})`
+      );
+      // Apply any positive-delta swap above noise floor (0.1% of baseline).
+      // Lower threshold than initial v2 — even small wins compound when we
+      // apply several in a row.
+      const baseline = swap.baseline || 1;
+      const noiseFloor = Math.max(0.1, baseline * 0.001);
+      const meaningful = swap.proposals.filter((p) => p.delta > noiseFloor);
+      for (const p of meaningful.slice(0, refineLimit)) {
+        const apply = await bridge.send({
+          action: "update_tree_delta",
+          params: {
+            removeNodes: [p.drop.id],
+            addNodes: [p.add.id],
+          },
+        });
+        if (apply.ok === false) {
+          log.push(`  swap ${p.drop.name} → ${p.add.name}: ${apply.error}`);
+          continue;
+        }
+        calcRefineSwaps++;
+        if (calcRefineSwaps <= 5) {
+          log.push(`  swap +${p.delta} : drop '${p.drop.name}' → add '${p.add.name}'`);
+        }
+      }
+      log.push(`Calc refine applied: ${calcRefineSwaps} swaps`);
+    } catch (e) {
+      log.push(`Calc refine skipped: ${(e as Error).message}`);
+    }
+  }
+
+  // 9. Export
   const exp = await bridge.send({ action: "export_build_xml" });
   if (exp.ok === false || typeof exp.xml !== "string") throw new Error(`export: ${exp.error || "no xml"}`);
   const buildXml = exp.xml;
@@ -410,6 +510,8 @@ export async function synthesizeBuild(
       treeNodeIds: Array.from(allocated),
       mainSkill: skillResult?.mainSkill ?? null,
       supports: skillResult?.supports ?? [],
+      equippedSlots,
+      calcRefineSwaps,
       finalDPS,
       finalLife,
     },
