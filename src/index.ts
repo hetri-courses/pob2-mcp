@@ -39,6 +39,8 @@ import {
   bottleneckAnalysis,
   suggestGemLink,
 } from "./theorycraft.js";
+import { synthesizeBuild } from "./buildGen.js";
+import { loadClasses } from "./classes.js";
 import { generateBuildGuide } from "./htmlGuide.js";
 import { searchGems, getGem, gemStats, type GemType } from "./gemData.js";
 
@@ -579,14 +581,10 @@ const TOOLS = [
   {
     name: "suggest_gem_link",
     description:
-      "EXPERIMENTAL — find which support gems would improve a socket group's main skill. " +
-      "Filters the gem DB to compatible supports, then simulates each via add_gem → " +
-      "get_stats → remove_gem. Returns ranked proposals with action-ready payloads. " +
-      "KNOWN ISSUE: gems added programmatically often show 0 DPS delta even when the support " +
-      "should apply — likely a field-construction mismatch vs the XML load path inside " +
-      "BuildOps.add_gem. Plumbing is correct (non-persistence verified); calc integration " +
-      "needs further investigation. The candidate filtering + action payloads are still useful " +
-      "as suggestions the user can verify in the PoB GUI.",
+      "Find which support gems would improve a socket group's main skill. Filters via PoB's " +
+      "calcLib.canGrantedEffectSupportActiveSkill (real requireSkillTypes/excludeSkillTypes check), " +
+      "then simulates each candidate via add_gem → get_stats → remove_gem. Returns ranked " +
+      "proposals with action-ready payloads. Non-persistent — won't mutate the loaded build.",
     inputSchema: {
       type: "object",
       properties: {
@@ -596,6 +594,47 @@ const TOOLS = [
         limit: { type: "number", description: "Max proposals to return. Default 8." },
         simLevel: { type: "number", description: "Gem level for the simulated add. Default 20." },
         simQuality: { type: "number", description: "Gem quality for the simulated add. Default 20." },
+      },
+    },
+  },
+  // ----- Phase 8G: build synthesis -----
+  {
+    name: "synthesize_build",
+    description:
+      "Generate a starter PoE2 build from scratch given a class (and optional ascendancy), " +
+      "level, and main skill. Fresh-builds the Lua bridge, sets class, allocates ~level-2 " +
+      "passive points via a greedy stat-text heuristic (toward the chosen goal — dps/life/" +
+      "hybrid/defence), creates a socket group with the main skill, and adds 3 compatible " +
+      "supports via suggest_gem_link. Returns a PoB-importable build code + summary log. " +
+      "v1 limits: no gear scaffolding (build exports without items); single socket group; " +
+      "ascendancy may not fully apply (PoB requires an ascendancy notable allocation to " +
+      "activate the ascendancy class — synthesis sets the class but leaves the user to " +
+      "click into the ascendancy subtree in PoB GUI).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        className: { type: "string", description: "Class name, e.g., 'Monk', 'Witch', 'Warrior'." },
+        ascendancyName: { type: "string", description: "Optional ascendancy name, e.g., 'Invoker', 'Stormweaver'." },
+        level: { type: "number", description: "Character level. Default 90." },
+        mainSkillName: { type: "string", description: "Active skill gem name, e.g., 'Tempest Bell', 'Spark', 'Earthquake'." },
+        goal: { type: "string", description: "'dps' | 'life' | 'hybrid' | 'defence'. Default 'dps'." },
+        treePointBudget: { type: "number", description: "Extra points to allocate (beyond class start). Default: min(level-2, 100)." },
+        supportCount: { type: "number", description: "How many supports to add to the main group. Default 3." },
+        gemLevel: { type: "number", description: "Level for main skill + supports. Default 20." },
+        slot: { type: "string", description: "Socket group slot. Default 'Weapon 1'." },
+      },
+      required: ["className"],
+    },
+  },
+  {
+    name: "list_classes",
+    description:
+      "List all PoE2 classes and their ascendancies for the loaded tree version. " +
+      "Useful before calling synthesize_build to pick valid (className, ascendancyName) pairs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        treeVersion: { type: "string", description: "Tree version (default '0_4')." },
       },
     },
   },
@@ -974,6 +1013,35 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const b = await ensureBridge();
         const result = await bottleneckAnalysis(b);
         return ok(result);
+      }
+      case "synthesize_build": {
+        const b = await ensureBridge();
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        if (typeof a.className !== "string") return err("className is required");
+        const goal = typeof a.goal === "string" ? a.goal : undefined;
+        if (goal && !["dps", "life", "hybrid", "defence"].includes(goal)) {
+          return err("goal must be one of: dps, life, hybrid, defence");
+        }
+        const result = await synthesizeBuild(b, fp, {
+          className: a.className,
+          ascendancyName: typeof a.ascendancyName === "string" ? a.ascendancyName : undefined,
+          level: typeof a.level === "number" ? a.level : undefined,
+          mainSkillName: typeof a.mainSkillName === "string" ? a.mainSkillName : undefined,
+          goal: goal as "dps" | "life" | "hybrid" | "defence" | undefined,
+          treePointBudget: typeof a.treePointBudget === "number" ? a.treePointBudget : undefined,
+          supportCount: typeof a.supportCount === "number" ? a.supportCount : undefined,
+          gemLevel: typeof a.gemLevel === "number" ? a.gemLevel : undefined,
+          slot: typeof a.slot === "string" ? a.slot : undefined,
+        });
+        return ok(result);
+      }
+      case "list_classes": {
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const version = typeof a.treeVersion === "string" ? a.treeVersion : "0_4";
+        const classes = loadClasses(fp, version);
+        return ok({ treeVersion: version, classes });
       }
       case "find_path_to_node": {
         const b = await ensureBridge();
