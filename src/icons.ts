@@ -19,6 +19,42 @@ import type { TreeNode } from "./treeData.js";
 import type { Gem } from "./gemData.js";
 
 const POE2DB_CDN = "https://cdn.poe2db.tw/image/";
+
+// ---------------------------------------------------------------------------
+// Static gem-name → icon-path map (scraped from poe2db.tw/us/Gem).
+// Loaded lazily on first gemIconRef call. ~97% coverage of our 903 PoE2 gems.
+// Regenerate with: node tools/scrape-gem-icons.mjs
+// ---------------------------------------------------------------------------
+let GEM_ICON_MAP: Record<string, string> | null = null;
+function loadGemIconMap(): Record<string, string> {
+  if (GEM_ICON_MAP) return GEM_ICON_MAP;
+  // Resolve data/gem-icons.json relative to this file. After tsc, the file
+  // lives at build/icons.js — data/ is up one level.
+  // Prefer not failing the entire HTML guide on a missing JSON, so swallow.
+  try {
+    // We use a direct path rather than import.meta.resolve to keep this
+    // synchronous and ESM-portable across build outputs.
+    const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+    // From build/ -> ../data/gem-icons.json; from src/ -> ../data/gem-icons.json
+    const candidates = [
+      path.join(here, "..", "data", "gem-icons.json"),
+      path.join(here, "..", "..", "data", "gem-icons.json"),
+    ];
+    for (const p of candidates) {
+      if (existsSync(p)) {
+        const json = JSON.parse(readFileSync(p, "utf8")) as {
+          icons: Record<string, string>;
+        };
+        GEM_ICON_MAP = json.icons || {};
+        return GEM_ICON_MAP;
+      }
+    }
+  } catch {
+    /* fall through to empty map */
+  }
+  GEM_ICON_MAP = {};
+  return GEM_ICON_MAP;
+}
 // poe2db.tw's CDN runs behind a WAF that 403s minimalist User-Agents.
 // Browser-like headers (Sec-Fetch-*, real Chrome UA, Referer) get through.
 const BROWSER_HEADERS = {
@@ -65,14 +101,29 @@ export function passiveIconRefFromPath(iconPath: string, nodeType: string): Icon
 }
 
 /**
- * Resolve gem icon URL via `gameId` (most reliable — it carries the actual
- * internal variant, e.g. SkillGemFlickerStrikeTeleport which becomes
- * FlickerStrikeTeleportSkillGem.webp on poe2db).
+ * Resolve gem icon URL.
  *
- * Pattern: gameId tail "SkillGem<X>" → "<X>SkillGem.webp"
- *          gameId tail "SupportGem<X>" → "<X>Support.webp"
+ * Two-stage:
+ *   1. Look up the gem name in the static scrape map (data/gem-icons.json).
+ *      Hits ~97% of PoE2 gems. Path is `Art/2DArt/SkillIcons/...webp`.
+ *   2. Fall back to the gameId-tail heuristic (`Art/2DItems/Gems/New/...webp`).
+ *      Catches a few stragglers but most miss.
  */
 export function gemIconRef(gem: Gem): IconRef | null {
+  // Stage 1: static map lookup
+  const map = loadGemIconMap();
+  const mapped = map[gem.name];
+  if (mapped) {
+    const filename = mapped.split("/").pop() ?? gem.name;
+    return {
+      src: POE2DB_CDN + mapped,
+      kind: gem.isSupport ? "gem-support" : "gem-active",
+      cacheKey: "gem-" + filename,
+      mime: "image/webp",
+    };
+  }
+
+  // Stage 2: gameId-tail heuristic (legacy path)
   // Prefer gameId — name-based guessing fails for variants ("Flicker Strike"
   // is actually SkillGemFlickerStrikeTeleport in PoB2's gem data).
   const m = gem.gameId
