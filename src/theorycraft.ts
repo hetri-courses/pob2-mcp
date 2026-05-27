@@ -228,7 +228,12 @@ export interface SuggestGemLinkResult {
   mainActiveTags: string[];
   baseline: number;
   targetMetric: string;
-  considered: { candidatesScreened: number; candidatesTested: number };
+  considered: {
+    candidatesScreened: number;
+    candidatesTested: number;
+    /** "engine" = used PoB's calcLib check; "tag-overlap" = used Node-side tag heuristic (only group != main). */
+    screenSource: "engine" | "tag-overlap";
+  };
   proposals: GemLinkProposal[];
   elapsedMs: number;
 }
@@ -259,7 +264,7 @@ export async function suggestGemLink(
     groupIndex?: number;
     /** Stat to optimize. Default TotalDPS. */
     targetMetric?: string;
-    /** Cap on candidates we'll spend a real calc_with on. Default 12. */
+    /** Cap on candidates we'll spend a real calc_with on. Default 30. */
     maxCandidates?: number;
     /** Cap on returned proposals. Default 8. */
     limit?: number;
@@ -270,7 +275,7 @@ export async function suggestGemLink(
   } = {}
 ): Promise<SuggestGemLinkResult> {
   const targetMetric = options.targetMetric ?? "TotalDPS";
-  const maxCandidates = options.maxCandidates ?? 12;
+  const maxCandidates = options.maxCandidates ?? 30;
   const limit = options.limit ?? 8;
   const simLevel = options.simLevel ?? 20;
   const simQuality = options.simQuality ?? 20;
@@ -302,43 +307,75 @@ export async function suggestGemLink(
     if (dbGem) activeTags = dbGem.tags;
   }
 
-  // 2. Filter candidate supports — overlap tags with active skill, exclude
-  //    supports already in the group.
+  // 2. Filter candidate supports — exclude supports already in the group,
+  //    then use PoB's REAL compatibility check (calcLib.canGrantedEffectSupportActiveSkill)
+  //    via screen_supports. This is the canonical filter — pure tag-overlap
+  //    falls over because supports use requireSkillTypes/excludeSkillTypes which
+  //    are not the same as Gems.lua `tags`.
   const existingSupportNames = new Set(
     (group.gems ?? [])
       .filter((g) => g.isSupport)
       .map((g) => (g.nameSpec ?? g.skillId ?? "").toLowerCase())
   );
 
-  // Walk every support gem in the catalog
-  const allCandidates = listGems(forkPath, { supportOnly: true });
-
   // Tags that indicate "this support causes a side effect" rather than scaling
   // the supported skill's damage. PoE2 has many of these (triggers, hazards,
   // payoff supports) — they show ~0 delta in our smoke and pollute results.
-  // Filter them out unless the user opts in to seeing them.
   const TRIGGER_TAGS = new Set(["trigger", "payoff", "hazard", "plant"]);
-  // Tags that DO scale damage — prioritize supports with these
+  // Tags that DO scale damage — prioritize supports with these. Includes
+  // PoE2-specific damage scaling concepts: penetration, area, attack, etc.
   const SCALING_TAGS = new Set([
     "physical", "fire", "cold", "lightning", "chaos",
     "critical", "duration", "projectile", "melee", "spell",
-    "minion", "totem", "aura",
+    "minion", "totem", "aura", "area", "attack", "channelling",
+    "warcry", "strike", "slam", "bow",
   ]);
 
-  // Score: tag overlap with active + bonus for scaling tags, penalty for triggers
-  const screened = allCandidates
+  // Try the engine-canonical filter first. Only valid against the main group;
+  // for other groups, fall back to tag-overlap heuristic.
+  type CandidateGem = { name: string; tags: string[]; tier: number };
+  let candidatesPool: CandidateGem[];
+  let screenSource: "engine" | "tag-overlap";
+  if (groupIndex === skills.mainSocketGroup) {
+    const screenResp = await bridge.send({ action: "screen_supports" });
+    if (screenResp.ok !== false && screenResp.screen) {
+      const screen = screenResp.screen as {
+        compatible: Array<{ name: string; id: string; tier: number; tags: string[] }>;
+      };
+      candidatesPool = screen.compatible.map((g) => ({ name: g.name, tags: g.tags, tier: g.tier }));
+      screenSource = "engine";
+    } else {
+      candidatesPool = listGems(forkPath, { supportOnly: true });
+      screenSource = "tag-overlap";
+    }
+  } else {
+    candidatesPool = listGems(forkPath, { supportOnly: true });
+    screenSource = "tag-overlap";
+  }
+
+  // Score the pool by tag overlap with the active skill (used for RANKING only;
+  // the engine filter above already did the hard compat check).
+  const screened = candidatesPool
     .filter((g) => !existingSupportNames.has(g.name.toLowerCase()))
     .filter((g) => !g.tags.some((t) => TRIGGER_TAGS.has(t.toLowerCase())))
     .map((g) => {
       const overlap = g.tags.filter((t) => activeTags.includes(t)).length;
       const scalingHits = g.tags.filter((t) => SCALING_TAGS.has(t.toLowerCase())).length;
-      const score = overlap * 10 + scalingHits * 5 - g.tier;
+      const score = overlap * 10 + scalingHits * 5 - (g.tier ?? 0);
       return { gem: g, overlap, score };
     })
-    .filter((x) => x.overlap > 0 || activeTags.length === 0)
+    // When using engine filter, keep all; tag-overlap mode requires overlap > 0
+    .filter((x) => screenSource === "engine" || x.overlap > 0 || activeTags.length === 0)
     .sort((a, b) => b.score - a.score);
 
-  const candidates = screened.slice(0, maxCandidates).map((s) => s.gem);
+  // Resolve each lightweight candidate back to its full Gem record (so we
+  // have gemType, isSupport, etc. for the proposal payload).
+  const fullGems = listGems(forkPath, { supportOnly: true });
+  const fullByName = new Map(fullGems.map((g) => [g.name.toLowerCase(), g]));
+  const candidates = screened
+    .slice(0, maxCandidates)
+    .map((s) => fullByName.get(s.gem.name.toLowerCase()))
+    .filter((g): g is NonNullable<typeof g> => g != null);
 
   // 3. Baseline metric
   const baselineStats = (
@@ -411,7 +448,7 @@ export async function suggestGemLink(
     mainActiveTags: activeTags,
     baseline: round(baseline),
     targetMetric,
-    considered: { candidatesScreened: screened.length, candidatesTested: candidates.length },
+    considered: { candidatesScreened: screened.length, candidatesTested: candidates.length, screenSource },
     proposals: proposals.slice(0, limit),
     elapsedMs: Date.now() - start,
   };

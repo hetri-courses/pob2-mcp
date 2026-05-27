@@ -27,7 +27,7 @@ for (const g of main?.gems ?? []) {
 }
 
 console.log("\n=== suggest_gem_link (target=TotalDPS, simLevel=20) ===");
-const r = await suggestGemLink(bridge, forkPath, { maxCandidates: 10, limit: 6 });
+const r = await suggestGemLink(bridge, forkPath, { maxCandidates: 30, limit: 8 });
 console.log(`  main active: ${r.mainActiveSkill}  tags=${r.mainActiveTags.join(", ") || "(none)"}`);
 console.log(`  baseline ${r.targetMetric}: ${r.baseline}`);
 console.log(`  considered: screened ${r.considered.candidatesScreened}, tested ${r.considered.candidatesTested}`);
