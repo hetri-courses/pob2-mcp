@@ -223,6 +223,18 @@ handlers.set_gem_level = function(params)
   return { ok = true }
 end
 
+handlers.dump_gem = function(params)
+  local res, err = BuildOps.dump_gem(params or {})
+  if not res then return { ok = false, error = err or 'failed to dump gem' } end
+  return { ok = true, dump = res }
+end
+
+handlers.screen_supports = function(params)
+  local res, err = BuildOps.screen_supports(params or {})
+  if not res then return { ok = false, error = err or 'failed to screen supports' } end
+  return { ok = true, screen = res }
+end
+
 handlers.set_gem_quality = function(params)
   local ok2, err = BuildOps.set_gem_quality(params or {})
   if not ok2 then return { ok = false, error = err or 'failed to set gem quality' } end

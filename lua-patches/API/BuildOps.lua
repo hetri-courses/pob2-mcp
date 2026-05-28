@@ -223,16 +223,26 @@ function M.update_tree_delta(params)
   for id,_ in pairs(set) do table.insert(nodes, id) end
   table.sort(nodes)
   local mastery = current.masteryEffects or {}
-  local className = params.className or (build.spec and build.spec.curClassName)
+  -- CRITICAL: PoB's PassiveSpec.lua ImportFromNodeList (line ~318-321) does:
+  --   if className then
+  --     classId = classNameMap[className] or ascendNameMap[className].classId
+  --     ascendClassId = ascendNameMap[className].ascendClassId or 0   -- ← OVERWRITES passed value
+  --   end
+  -- So if className is "Monk" (base class), ascendClassId is forcibly RESET to 0,
+  -- which silently wipes the build's ascendancy on every tree mutation.
+  --
+  -- Fix: only pass className when the caller explicitly provided it. Otherwise
+  -- pass nil, so PoB uses our explicit classId + ascendClassId from current state.
+  local className = params.className  -- nil if not provided — preserves current ascendancy
   local classId = params.classId or current.classId or 0
   local ascendId = params.ascendClassId or current.ascendClassId or 0
   local secId = params.secondaryAscendClassId or current.secondaryAscendClassId or 0
   local tv = params.treeVersion or current.treeVersion
 
   build.spec:ImportFromNodeList(
-    className,                           -- 1: className (preferred; resolves via classNameMap)
-    tonumber(classId) or 0,              -- 2: classId (fallback when className nil)
-    tonumber(ascendId) or 0,             -- 3: ascendClassId
+    className,                           -- 1: className (only when user wants to (re)set class/ascendancy)
+    tonumber(classId) or 0,              -- 2: classId (used when className nil)
+    tonumber(ascendId) or 0,             -- 3: ascendClassId (used when className nil)
     tonumber(secId) or 0,                -- 4: secondaryAscendClassId
     nodes,                                -- 5: hashList (node IDs to allocate)
     {},                                   -- 6: weaponSets (per-node weapon-set map; PoE2 dual sets, empty=default)
@@ -651,7 +661,8 @@ function M.add_gem(params)
   local socketGroup = skillSet.socketGroupList[groupIndex]
   if not socketGroup then return nil, 'socket group not found at index ' .. tostring(groupIndex) end
 
-  -- Create gem instance
+  -- Create gem instance, initialising every field PoB's XML loader does so
+  -- the instance shape matches what ProcessSocketGroup + calc engine expects.
   local gemInstance = {
     nameSpec = tostring(params.gemName),
     level = tonumber(params.level) or 20,
@@ -661,9 +672,18 @@ function M.add_gem(params)
     enableGlobal1 = true,
     enableGlobal2 = false,
     count = tonumber(params.count) or 1,
+    corrupted = false,
+    corruptLevel = 0,
+    statSet = {},
+    statSetCalcs = {},
+    skillMinionSkillStatSetIndexLookup = {},
+    skillMinionSkillStatSetIndexLookupCalcs = {},
   }
 
-  -- Try to find gem data
+  -- Resolve gem by exact name match against build.data.gems.
+  -- ProcessSocketGroup re-derives gemData from gemId, so this is the
+  -- handle that matters; manual gemData assignment is wiped later.
+  local resolved = false
   if build.data and build.data.gems then
     for _, gemData in pairs(build.data.gems) do
       if gemData.name == gemInstance.nameSpec or gemData.nameSpec == gemInstance.nameSpec then
@@ -674,9 +694,16 @@ function M.add_gem(params)
           gemInstance.skillId = gemData.grantedEffectId
         end
         gemInstance.gemData = gemData
+        resolved = true
         break
       end
     end
+  end
+  -- Fail loud if the gem name doesn't exist. Previously this would silently
+  -- insert a ghost gem with no gemData; ProcessSocketGroup would set errMsg
+  -- but the calc would just ignore it, yielding 0 deltas. Better to error.
+  if not resolved then
+    return nil, "unknown gem name '" .. tostring(params.gemName) .. "'"
   end
 
   table.insert(socketGroup.gemList, gemInstance)
@@ -690,6 +717,177 @@ function M.add_gem(params)
   M.get_main_output()
 
   return { gemIndex = gemIndex, name = gemInstance.nameSpec }
+end
+
+-- Screen support gems for compatibility with the main active skill.
+-- Uses PoB's real calcLib.canGrantedEffectSupportActiveSkill — handles
+-- requireSkillTypes / excludeSkillTypes / supportGemsOnly / cannotBeSupported.
+-- Tag-overlap heuristics on the Node side miss these, so this is the canonical filter.
+--
+-- params: { candidateNames?: string[] }  (if omitted, screens ALL support gems)
+-- returns: {
+--   activeSkillName: string,
+--   compatible: [{ name, id, tags[], tier }],
+--   incompatibleCount: number,  -- summary only (full list would be huge)
+-- }
+function M.screen_supports(params)
+  if not build then return nil, 'build not initialized' end
+  -- Ensure mainEnv is built; this populates mainEnv.player.mainSkill
+  M.get_main_output()
+  local mainEnv = build.calcsTab and build.calcsTab.mainEnv
+  if not mainEnv or not mainEnv.player or not mainEnv.player.mainSkill then
+    return nil, 'no main active skill (build may be empty)'
+  end
+  local activeSkill = mainEnv.player.mainSkill
+  if not activeSkill.activeEffect or not activeSkill.activeEffect.grantedEffect then
+    return nil, 'main active skill has no granted effect'
+  end
+
+  -- calcLib is a PoB-side global set by Modules/CalcTools.lua during HeadlessWrapper boot.
+  -- It is NOT a real Lua module that returns a table.
+  if not _G.calcLib or not _G.calcLib.canGrantedEffectSupportActiveSkill then
+    return nil, 'calcLib global unavailable (HeadlessWrapper may not have loaded Modules/CalcTools)'
+  end
+  local calcLib = _G.calcLib
+
+  local candidateFilter
+  if params and type(params.candidateNames) == 'table' then
+    candidateFilter = {}
+    for _, n in ipairs(params.candidateNames) do
+      candidateFilter[tostring(n)] = true
+    end
+  end
+
+  local compatible = {}
+  local incompatibleCount = 0
+  for _, gemData in pairs(build.data.gems) do
+    local ge = gemData.grantedEffect
+    if ge and ge.support and not ge.unsupported then
+      if not candidateFilter or candidateFilter[gemData.name] then
+        local ok = calcLib.canGrantedEffectSupportActiveSkill(ge, activeSkill)
+        if ok then
+          local tags = {}
+          if gemData.tags then
+            for tag, present in pairs(gemData.tags) do
+              if present then table.insert(tags, tag) end
+            end
+          end
+          table.insert(compatible, {
+            name = gemData.name,
+            id = gemData.id,
+            tier = gemData.tier or 0,
+            tags = tags,
+          })
+        else
+          incompatibleCount = incompatibleCount + 1
+        end
+      end
+    end
+  end
+
+  return {
+    activeSkillName = activeSkill.activeEffect.grantedEffect.name,
+    compatible = compatible,
+    incompatibleCount = incompatibleCount,
+  }
+end
+
+-- Diagnostic: dump the full Lua table for a gem instance.
+-- params: { groupIndex: number, gemIndex: number }
+-- Returns a JSON-safe shallow snapshot:
+--   - scalar fields (string/number/bool) inline
+--   - tables: { __table = true, keys = [..], length = N }
+--   - gemData / grantedEffect: key identifying fields only (avoids cycles)
+function M.dump_gem(params)
+  if not build or not build.skillsTab then return nil, 'skills not initialized' end
+  if type(params) ~= 'table' then return nil, 'invalid params' end
+  if not params.groupIndex or not params.gemIndex then
+    return nil, 'missing groupIndex or gemIndex'
+  end
+
+  local skillSetId = build.skillsTab.activeSkillSetId or 1
+  local skillSet = build.skillsTab.skillSets[skillSetId]
+  if not skillSet then return nil, 'active skill set not found' end
+
+  local socketGroup = skillSet.socketGroupList[tonumber(params.groupIndex)]
+  if not socketGroup then return nil, 'socket group not found' end
+
+  local gemInstance = socketGroup.gemList[tonumber(params.gemIndex)]
+  if not gemInstance then return nil, 'gem not found' end
+
+  local function tableKeys(t, limit)
+    local keys = {}
+    local n = 0
+    for k, _ in pairs(t) do
+      n = n + 1
+      if n <= (limit or 30) then table.insert(keys, tostring(k)) end
+    end
+    return keys, n
+  end
+
+  local dump = {}
+  for k, v in pairs(gemInstance) do
+    local key = tostring(k)
+    local vt = type(v)
+    if vt == 'string' or vt == 'number' or vt == 'boolean' then
+      dump[key] = v
+    elseif vt == 'nil' then
+      dump[key] = nil
+    elseif vt == 'table' then
+      if key == 'gemData' then
+        -- Shared data; pluck identifying fields only
+        local gd = v
+        dump.gemData = {
+          id = gd.id,
+          name = gd.name,
+          nameSpec = gd.nameSpec,
+          gameId = gd.gameId,
+          variantId = gd.variantId,
+          tags = gd.tags and tableKeys(gd.tags, 50) or nil,
+          naturalMaxLevel = gd.naturalMaxLevel,
+          reqStr = gd.reqStr, reqDex = gd.reqDex, reqInt = gd.reqInt,
+          color = gd.color,
+          grantedEffectId = gd.grantedEffectId,
+          hasGrantedEffect = gd.grantedEffect ~= nil,
+          hasAdditionalGrantedEffects = (gd.additionalGrantedEffects and #gd.additionalGrantedEffects or 0),
+        }
+        if gd.grantedEffect then
+          local ge = gd.grantedEffect
+          dump.gemData.grantedEffect = {
+            id = ge.id,
+            name = ge.name,
+            support = ge.support,
+            color = ge.color,
+            unsupported = ge.unsupported,
+            hasLevels = ge.levels ~= nil,
+            levelCount = ge.levels and #ge.levels or 0,
+          }
+        end
+      elseif key == 'grantedEffect' then
+        dump.grantedEffect = {
+          id = v.id,
+          name = v.name,
+          support = v.support,
+          color = v.color,
+          unsupported = v.unsupported,
+        }
+      else
+        -- Other tables: keys + length summary
+        local keys, totalKeys = tableKeys(v, 30)
+        dump[key] = { __table = true, keys = keys, totalKeys = totalKeys, arrayLength = #v }
+      end
+    else
+      dump[key] = '<' .. vt .. '>'
+    end
+  end
+
+  return {
+    groupIndex = tonumber(params.groupIndex),
+    gemIndex = tonumber(params.gemIndex),
+    groupLabel = socketGroup.label,
+    groupSlot = socketGroup.slot,
+    gem = dump,
+  }
 end
 
 -- Set gem level
