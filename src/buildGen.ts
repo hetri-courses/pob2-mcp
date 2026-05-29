@@ -31,8 +31,9 @@
 
 import type { LuaBridge } from "./luaBridge.js";
 import { findClass, findAscendancy, type Ascendancy } from "./classes.js";
-import { loadTree, type TreeNode } from "./treeData.js";
+import { loadTree, findPathToNode, type TreeNode } from "./treeData.js";
 import { getGem } from "./gemData.js";
+import { buildAttribCatalog } from "./attributes.js";
 import { suggestGemLink, suggestNodeSwaps } from "./theorycraft.js";
 import { encodeBuildCode } from "./codec.js";
 import { generateGear } from "./gearGen.js";
@@ -139,7 +140,37 @@ const STAT_KEYWORDS: Record<OptimisationGoal, { positive: RegExp[]; negative: Re
   },
 };
 
-function scoreNodeForGoal(node: TreeNode, goal: OptimisationGoal): number {
+/**
+ * What a skill actually uses, derived from its gem tags. Lets the tree scorer
+ * stop rewarding "Projectile Damage" on a melee skill, "Spell Damage" on an
+ * attack, etc. — the "real allocation" fix.
+ */
+export interface SkillProfile {
+  isAttack: boolean;
+  isSpell: boolean;
+  isProjectile: boolean;
+  isMelee: boolean;
+  isMinion: boolean;
+  /** Damage-type tags the skill itself carries (physical/fire/cold/...). */
+  damageTags: Set<string>;
+}
+
+export function deriveSkillProfile(forkPath: string, mainSkillName: string | undefined): SkillProfile | null {
+  if (!mainSkillName) return null;
+  const gem = getGem(forkPath, mainSkillName);
+  if (!gem) return null;
+  const tags = new Set(gem.tags.map((t) => t.toLowerCase()));
+  return {
+    isAttack: tags.has("attack"),
+    isSpell: tags.has("spell"),
+    isProjectile: tags.has("projectile"),
+    isMelee: tags.has("melee"),
+    isMinion: tags.has("minion"),
+    damageTags: new Set(["physical", "fire", "cold", "lightning", "chaos"].filter((t) => tags.has(t))),
+  };
+}
+
+function scoreNodeForGoal(node: TreeNode, goal: OptimisationGoal, profile?: SkillProfile | null): number {
   const stats = node.stats ?? [];
   if (!stats.length) return 0;
   const { positive, negative } = STAT_KEYWORDS[goal];
@@ -150,6 +181,22 @@ function scoreNodeForGoal(node: TreeNode, goal: OptimisationGoal): number {
     // Bigger numbers in stat text → larger bonuses, e.g., "30% increased Damage" beats "10%"
     const numMatch = /(\d+)/.exec(s);
     if (numMatch) score += Math.min(Number(numMatch[1]) / 10, 5);
+  }
+  // Skill-awareness: a node that scales a delivery the skill doesn't use is
+  // worthless. Penalties exceed the ~15-25 a damage node earns above, so a hard
+  // mismatch (Projectile Damage on a melee strike) drops below relevant nodes.
+  if (profile) {
+    for (const s of stats) {
+      const sl = s.toLowerCase();
+      if (!profile.isProjectile && /\bprojectile|\barrow/.test(sl)) score -= 25;
+      if (!profile.isSpell && /\bspell|cast speed/.test(sl)) score -= 20;
+      if (!/\bbow|crossbow/.test(stats.join(" ").toLowerCase()) && profile.isMelee && /\bbow\b|crossbow/.test(sl)) score -= 20;
+      if (!profile.isMinion && /\bminion|companion/.test(sl)) score -= 15;
+      // Boosts for matching the skill's real profile.
+      if (profile.isMelee && /\bmelee\b/.test(sl)) score += 6;
+      if (profile.isAttack && /attack speed|attack damage|with attacks|increased attack/.test(sl)) score += 4;
+      for (const dt of profile.damageTags) if (sl.includes(dt)) score += 8;
+    }
   }
   // Notable + keystone get a tier bonus
   if (node.type === "notable") score += 8;
@@ -170,6 +217,7 @@ async function greedyAllocateTree(
   goal: OptimisationGoal,
   pointBudget: number,
   log: string[],
+  profile?: SkillProfile | null,
 ): Promise<{ allocated: Set<number>; pointsSpent: number }> {
   const treeData = loadTree(forkPath, treeVersion);
   // The class start has already auto-allocated some nodes; query state.
@@ -189,8 +237,10 @@ async function greedyAllocateTree(
         if (allocated.has(adj)) continue;
         const adjNode = treeData.byId.get(adj);
         if (!adjNode) continue;
-        // Skip mastery + ascendancy-not-yet-ours
+        // Skip mastery; skip ascendancy nodes — those consume separate
+        // ascendancy points in PoE2, not the passive budget we're spending here.
         if (adjNode.type === "mastery") continue;
+        if (adjNode.type === "ascendancy-normal" || adjNode.type === "ascendancy-notable") continue;
         frontier.set(adj, adjNode);
       }
     }
@@ -201,7 +251,7 @@ async function greedyAllocateTree(
     // Score each frontier node
     let best: { id: number; node: TreeNode; score: number } | null = null;
     for (const [id, node] of frontier) {
-      const score = scoreNodeForGoal(node, goal);
+      const score = scoreNodeForGoal(node, goal, profile);
       if (!best || score > best.score) best = { id, node, score };
     }
     if (!best || best.score <= 0) {
@@ -229,6 +279,117 @@ async function greedyAllocateTree(
     void allocList;
   }
   return { allocated, pointsSpent: spent };
+}
+
+// ---------------------------------------------------------------------------
+// Attribute satisfaction: make the build actually able to use its gems + gear.
+// ---------------------------------------------------------------------------
+
+/** BFS from the allocated set to the nearest unallocated node matching `want`. */
+function nearestNode(
+  tree: ReturnType<typeof loadTree>,
+  allocated: Set<number>,
+  want: (n: TreeNode) => boolean,
+): number | null {
+  const seen = new Set<number>(allocated);
+  let frontier = [...allocated];
+  for (let depth = 0; depth < 25 && frontier.length; depth++) {
+    const next: number[] = [];
+    for (const id of frontier) {
+      const node = tree.byId.get(id);
+      if (!node) continue;
+      for (const adj of node.connections ?? []) {
+        if (seen.has(adj)) continue;
+        seen.add(adj);
+        const adjNode = tree.byId.get(adj);
+        if (!adjNode) continue;
+        if (adjNode.type === "ascendancy-normal" || adjNode.type === "ascendancy-notable" ||
+            adjNode.type === "jewel-socket" || adjNode.type === "class-start" || adjNode.type === "mastery") continue;
+        if (want(adjNode)) return adj;
+        next.push(adj);
+      }
+    }
+    frontier = next;
+  }
+  return null;
+}
+
+/**
+ * After gems + gear are in place, close the attribute requirement gap so the
+ * build can actually equip its gems/gear. Two levers:
+ *   1. Adaptive Capability (53108) — gem attribute reqs met by highest attribute
+ *      (the elegant fix for a Dex/Int Monk running 100-Str supports).
+ *   2. Nearest typed attribute nodes for any remaining (gear-driven) deficit.
+ * Re-measures the calc's Req* after each step (self-correcting) and reports the
+ * residual gap honestly — a leftover gap means it must come from gear attributes.
+ */
+async function satisfyAttributes(
+  bridge: LuaBridge,
+  forkPath: string,
+  treeVersion: string,
+  allocated: Set<number>,
+  log: string[],
+): Promise<void> {
+  const tree = loadTree(forkPath, treeVersion);
+  const catalog = buildAttribCatalog(forkPath, treeVersion);
+  const typedName = { Str: "Strength", Dex: "Dexterity", Int: "Intelligence" } as const;
+  type A = keyof typeof typedName;
+
+  const readGaps = async () => {
+    const st = ((await bridge.send({
+      action: "get_stats",
+      params: { fields: ["Str", "ReqStr", "Dex", "ReqDex", "Int", "ReqInt"] },
+    })).stats ?? {}) as Record<string, number>;
+    const gap: Record<A, number> = {
+      Str: Math.max(0, (st.ReqStr ?? 0) - (st.Str ?? 0)),
+      Dex: Math.max(0, (st.ReqDex ?? 0) - (st.Dex ?? 0)),
+      Int: Math.max(0, (st.ReqInt ?? 0) - (st.Int ?? 0)),
+    };
+    return { st, gap, total: gap.Str + gap.Dex + gap.Int };
+  };
+
+  let g = await readGaps();
+  if (g.total === 0) {
+    log.push(`Attributes: requirements already met (Str ${g.st.Str}/${g.st.ReqStr}, Dex ${g.st.Dex}/${g.st.ReqDex}, Int ${g.st.Int}/${g.st.ReqInt})`);
+    return;
+  }
+  log.push(`Attributes: gap Str ${g.gap.Str} / Dex ${g.gap.Dex} / Int ${g.gap.Int}`);
+
+  // 1. Adaptive Capability — collapses gem reqs onto the highest attribute.
+  if (catalog.adaptiveCapabilityId && !allocated.has(catalog.adaptiveCapabilityId)) {
+    const path = findPathToNode(forkPath, [...allocated], catalog.adaptiveCapabilityId, { version: treeVersion, maxHops: 50 });
+    if (path && path.path.length) {
+      const ids = path.path.map((n) => n.id);
+      const r = await bridge.send({ action: "update_tree_delta", params: { addNodes: ids } });
+      if (r.ok !== false) {
+        ids.forEach((id) => allocated.add(id));
+        g = await readGaps();
+        log.push(`Attributes: +Adaptive Capability (${ids.length} nodes) → gap Str ${g.gap.Str}/Dex ${g.gap.Dex}/Int ${g.gap.Int}`);
+      }
+    }
+  }
+
+  // 2. Fill remaining (gear-driven) gaps with the nearest typed attribute node.
+  let rounds = 0;
+  while (g.total > 0 && rounds < 14) {
+    rounds++;
+    const need = (["Str", "Dex", "Int"] as A[]).reduce((a, b) => (g.gap[b] > g.gap[a] ? b : a));
+    const want = (n: TreeNode) =>
+      n.name === typedName[need] || (n.stats ?? []).some((s) => /to all Attributes/i.test(s));
+    const target = nearestNode(tree, allocated, want);
+    if (target == null) { log.push(`Attributes: no reachable node grants ${need}; stopping`); break; }
+    const path = findPathToNode(forkPath, [...allocated], target, { version: treeVersion, maxHops: 50 });
+    if (!path || !path.path.length) break;
+    const ids = path.path.map((n) => n.id);
+    const r = await bridge.send({ action: "update_tree_delta", params: { addNodes: ids } });
+    if (r.ok === false) break;
+    ids.forEach((id) => allocated.add(id));
+    g = await readGaps();
+  }
+  log.push(
+    `Attributes final: Str ${g.st.Str}/${g.st.ReqStr}, Dex ${g.st.Dex}/${g.st.ReqDex}, Int ${g.st.Int}/${g.st.ReqInt}` +
+    (g.total > 0 ? ` (residual gap ${g.total} — cover with attributes on gear)` : " (satisfied)"),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +535,17 @@ export async function synthesizeBuild(
   const sl = await bridge.send({ action: "set_level", params: { level } });
   if (sl.ok === false) throw new Error(`set_level: ${sl.error}`);
 
-  // 4. Tree allocation (stat-text heuristic — calc DPS still 0 here)
+  // 4. Tree allocation (stat-text heuristic — calc DPS still 0 here).
+  //    Skill-aware: feed the main skill's profile so the scorer won't reward
+  //    e.g. Projectile Damage on a melee strike.
+  const skillProfile = deriveSkillProfile(forkPath, opts.mainSkillName);
+  if (skillProfile) {
+    const flags = [
+      skillProfile.isAttack && "attack", skillProfile.isSpell && "spell",
+      skillProfile.isMelee && "melee", skillProfile.isProjectile && "projectile",
+    ].filter(Boolean).join(",");
+    log.push(`Skill profile for '${opts.mainSkillName}': ${flags || "—"} | dmg=[${[...skillProfile.damageTags].join(",")}]`);
+  }
   const { allocated, pointsSpent } = await greedyAllocateTree(
     bridge,
     forkPath,
@@ -382,6 +553,7 @@ export async function synthesizeBuild(
     goal,
     treePointBudget,
     log,
+    skillProfile,
   );
   log.push(`Tree allocation done: ${pointsSpent} points spent, ${allocated.size} total nodes`);
 
@@ -431,6 +603,14 @@ export async function synthesizeBuild(
     } catch (e) {
       log.push(`Skill loadout failed: ${(e as Error).message}`);
     }
+  }
+
+  // 7b. Attribute satisfaction — with gems + gear in place the calc now reports
+  //     real Req*; close the gap so the build can actually equip everything.
+  try {
+    await satisfyAttributes(bridge, forkPath, treeVersion, allocated, log);
+  } catch (e) {
+    log.push(`Attribute satisfaction failed: ${(e as Error).message}`);
   }
 
   // 8. Calc-based refinement pass.
