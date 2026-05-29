@@ -10,9 +10,12 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { loadTree, findPathToNode } from "../build/treeData.js";
 import { loadRawTree, renderTreeSvg, nodeCoords } from "../build/treeSvg.js";
 import { IconResolver } from "../build/icons.js";
+import { loadGems } from "../build/gemData.js";
+import { getSkillInfo } from "../build/skillData.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const forkPath = "D:\\pob2-mcp\\pob2-fork\\src";
@@ -138,6 +141,66 @@ for (const [id, webp] of iconByNode) {
   if (u) nodeIcons.set(id, u);
 }
 
+// ============================ SKILLS TAB DATA ============================
+const gemDb = loadGems(forkPath).all;
+const gemIconMap = JSON.parse(readFileSync(path.join(here, "..", "data", "gem-icons.json"), "utf8")).icons;
+let maSupports = { skills: {} };
+try { maSupports = JSON.parse(readFileSync(path.join(here, "..", "data", "ma-supports.json"), "utf8")); } catch { /* run measure-ma-supports.mjs */ }
+const gemByName = (n) => gemDb.find((x) => x.name === n);
+const skillInfoByName = (n) => { const g = gemByName(n); return g ? getSkillInfo(forkPath, g.grantedEffectId) : null; };
+const cleanDesc = (s) => (s || "").replace(/\[(?:[^\]|]*\|)?([^\]]*)\]/g, "$1").replace(/\{[^}]*\}/g, "").trim();
+async function embedGemIcon(name) {
+  const p = gemIconMap[name];
+  if (!p) return null;
+  const webp = p.replace(/\.(png|dds)$/i, ".webp").replace(/\\/g, "/");
+  const ref = { src: "https://cdn.poe2db.tw/image/" + webp, kind: "gem-active", cacheKey: "gem-" + webp.replace(/[^a-z0-9.]/gi, "_"), mime: "image/webp" };
+  const rr = await resolver.embed(ref, { timeoutMs: 12000 });
+  return rr ? rr.dataUri : null;
+}
+
+const PRIMARY = "Killing Palm";
+const ALT_SKILLS = ["Staggering Palm", "Tempest Flurry", "Ice Strike", "Falling Thunder", "Glacial Cascade", "Charged Staff"];
+const skillIcons = new Map();
+for (const n of [PRIMARY, ...ALT_SKILLS]) skillIcons.set(n, await embedGemIcon(n));
+const primSupports = (maSupports.skills[PRIMARY] && maSupports.skills[PRIMARY].supports) || [];
+const supIcons = new Map();
+for (const s of primSupports.slice(0, 16)) supIcons.set(s.name, await embedGemIcon(s.name));
+
+const primInfo = skillInfoByName(PRIMARY);
+const posSup = primSupports.filter((s) => s.delta > 0);
+const compatSup = primSupports.filter((s) => s.delta <= 0).slice(0, 10);
+const supChip = (s, showPct) => {
+  const ic = supIcons.get(s.name);
+  const pct = showPct && s.pct != null ? `<span class="pct">+${s.pct}%</span>` : "";
+  return `<div class="sk-sup">${ic ? `<img src="${ic}" alt="">` : '<span class="noic"></span>'}<span>${s.name}</span>${pct}</div>`;
+};
+const skillsHtml = `
+<section class="sk-hero">
+  <div class="sk-iconlg">${skillIcons.get(PRIMARY) ? `<img src="${skillIcons.get(PRIMARY)}" alt="${PRIMARY}">` : ""}</div>
+  <div>
+    <h3 style="margin:.1rem 0 .3rem">${PRIMARY}</h3>
+    <div class="sk-badges"><span>Quarterstaff</span><span>Physical</span><span>Strike</span><span>Usable Lv ${primInfo ? primInfo.levelReq : 0}</span></div>
+    <p class="note" style="margin:.3rem 0">${cleanDesc(primInfo && primInfo.description)}</p>
+    <p class="lead">Physical Quarterstaff strike — works unarmed via Hollow Palm. Culls low-life enemies and generates Power Charges on kill, feeding crit.</p>
+  </div>
+</section>
+<section><h2>Support gems — measured DPS gain</h2>
+  <div class="sk-sups">${posSup.map((s) => supChip(s, true)).join("") || '<span class="note">none measured on the test build</span>'}</div>
+  ${compatSup.length ? `<p class="note" style="margin:14px 0 6px">Compatible (PoB-verified) supports that scale once crit gear is in — slot as you go:</p><div class="sk-sups dim">${compatSup.map((s) => supChip(s, false)).join("")}</div>` : ""}
+  <p class="note" style="margin-top:12px">DPS measured on a representative L90 build (0.4 calc). Heavy Swing &amp; Rage are universal physical gains; crit / penetration supports climb once crit gear is in. The 21 new Kalguuran supports + 0.5 tweaks confirm at launch.</p>
+</section>
+<section><h2>Alternative skills — all Quarterstaff (work unarmed)</h2>
+  <div class="sk-alts">${ALT_SKILLS.map((n) => { const i = skillInfoByName(n); const ic = skillIcons.get(n); const ele = i ? (i.skillTypes.find((t) => ["Fire", "Cold", "Lightning", "Physical"].includes(t)) || "") : ""; return `<div class="sk-alt">${ic ? `<img src="${ic}" alt="">` : '<span class="noic"></span>'}<div><b>${n}</b><span>${ele}${i ? " · Lv " + i.levelReq : ""}</span></div></div>`; }).join("")}</div>
+</section>
+<section><h2>Leveling by phase</h2>
+  <table><tr><th>Bracket</th><th>Skill setup</th></tr>
+  <tr><td>1–17</td><td>${PRIMARY} (Lv 0) — start swinging; slot ${posSup[0] ? posSup[0].name : "your first support"} as soon as it drops</td></tr>
+  <tr><td>18–40</td><td>+ ${posSup[1] ? posSup[1].name : "next support"}; level the gem, add supports as sockets open</td></tr>
+  <tr><td>41–70</td><td>Full link; Hollow Palm online → drop your weapon, go unarmed</td></tr>
+  <tr><td>71+</td><td>Re-rank supports once crit gear is in (crit-multi / penetration climb)</td></tr>
+  </table>
+</section>`;
+
 const svg = renderTreeSvg(raw, {
   allocated,
   ascendancyName: "Martial Artist",
@@ -194,6 +257,20 @@ const html = `<!doctype html>
   td:first-child{color:var(--gold);white-space:nowrap;width:1%}
   ol{margin:.3rem 0;padding-left:1.2rem;max-width:880px} ol li{margin:.3rem 0} ol b{color:var(--gold)}
   .note{color:var(--dim);font-size:.86rem} .lead{max-width:820px}
+  .sk-hero{display:flex;gap:18px;align-items:flex-start;max-width:880px}
+  .sk-iconlg{flex:none;width:88px;height:88px;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#1a1a20}
+  .sk-iconlg img{width:100%;height:100%;object-fit:cover}
+  .sk-badges{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0}
+  .sk-badges span{background:#1d1d24;border:1px solid var(--line);border-radius:5px;padding:.1rem .5rem;font-size:.76rem;color:var(--gold)}
+  .sk-sups{display:flex;flex-wrap:wrap;gap:10px;max-width:880px}
+  .sk-sups.dim{opacity:.62}
+  .sk-sup{display:flex;align-items:center;gap:8px;background:#16161b;border:1px solid var(--line);border-radius:7px;padding:6px 11px;font-size:.9rem}
+  .sk-sup img{width:30px;height:30px;border-radius:5px;flex:none} .sk-sup .noic{width:30px;height:30px;border-radius:5px;background:#2a2a33;flex:none}
+  .sk-sup .pct{color:var(--ok);font-weight:700}
+  .sk-alts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;max-width:880px}
+  .sk-alt{display:flex;align-items:center;gap:9px;background:#16161b;border:1px solid var(--line);border-radius:7px;padding:7px 10px}
+  .sk-alt img{width:34px;height:34px;border-radius:5px;flex:none} .sk-alt .noic{width:34px;height:34px;border-radius:5px;background:#2a2a33;flex:none}
+  .sk-alt b{display:block;font-size:.9rem} .sk-alt span{font-size:.78rem;color:var(--dim)}
   .trick{border-left:2px solid var(--acc);padding:2px 0 2px 14px;margin:.4rem 0;max-width:820px}
   .trick code{color:var(--gold);font-size:.9em}
   /* tree */
@@ -255,10 +332,7 @@ const html = `<!doctype html>
 
 </div>
 <div class="panel hidden" data-panel="skills">
-<section><h2>Skills</h2>
-<table><tr><th>When</th><th>Skill</th><th>Role</th></tr>
-${skillRows.map(([a, b, c]) => `<tr><td>${a}</td><td>${b}</td><td>${c}</td></tr>`).join("")}</table>
-<p class="note">Physical Monk strikes that work with Hollow Palm: Staggering Palm (stun), Rapid Assault, Killing Palm, Blood Hunt. Best pick confirms with 0.5 gem numbers.</p></section>
+${skillsHtml}
 
 </div>
 <div class="panel hidden" data-panel="tree">
