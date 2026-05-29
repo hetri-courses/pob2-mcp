@@ -124,6 +124,18 @@ export interface RenderTreeSvgOptions {
    * so the initial view tightens on the main-tree landmarks.
    */
   frameNodeIds?: Set<number>;
+  /**
+   * Per-node fill override (e.g. colour the path by level bracket). Applied
+   * as inline style so it beats the CSS class colour. Node still gets the
+   * glow/size from emphasizeAllocated.
+   */
+  nodeColors?: Map<number, string>;
+  /**
+   * Emit `data-id` on these nodes so host-page JS can show a rich tooltip
+   * (name + full stat lines) on hover. When set, the lightweight native
+   * <title> labels are suppressed in favour of the host tooltip.
+   */
+  tooltipIds?: Set<number>;
   /** Optional CSS-color overrides. */
   colors?: {
     background?: string;
@@ -314,6 +326,8 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
   // Nodes
   const emphasize = options.emphasizeAllocated === true;
   const ALLOC_SCALE = 2.4; // enlarge allocated landmarks in emphasize mode
+  const nodeColors = options.nodeColors;
+  const tooltipIds = options.tooltipIds;
   out.push(`<g>`);
   for (const [id, node] of includedNodes.entries()) {
     const { x, y } = includedCoords.get(id)!;
@@ -339,18 +353,21 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
     }
     if (emphasize && alloc) r = Math.round(r * ALLOC_SCALE);
 
-    // Hover label (native tooltip) for allocated landmarks in emphasize mode.
-    const title = emphasize && alloc && node.name
+    const colorOverride = nodeColors?.get(id);
+    const styleAttr = colorOverride ? ` style="fill:${colorOverride}"` : "";
+    const dataAttr = tooltipIds?.has(id) ? ` data-id="${id}"` : "";
+    // Native <title> only when we are NOT emitting data-id for a rich tooltip.
+    const title = !tooltipIds && emphasize && alloc && node.name
       ? `<title>${node.name.replace(/[<&]/g, "")}</title>`
       : "";
 
     if (node.isJewelSocket) {
       const half = r;
-      const rect = `<rect x="${cx - half}" y="${cy - half}" width="${half * 2}" height="${half * 2}" class="${cls}" transform="rotate(45 ${cx} ${cy})">`;
-      out.push(title ? `${rect}${title}</rect>` : `${rect.replace(/>$/, "/>")}`);
+      const open = `<rect x="${cx - half}" y="${cy - half}" width="${half * 2}" height="${half * 2}" class="${cls}"${styleAttr}${dataAttr} transform="rotate(45 ${cx} ${cy})">`;
+      out.push(title ? `${open}${title}</rect>` : open.replace(/>$/, "/>"));
     } else {
-      const circ = `<circle cx="${cx}" cy="${cy}" r="${r}" class="${cls}">`;
-      out.push(title ? `${circ}${title}</circle>` : `<circle cx="${cx}" cy="${cy}" r="${r}" class="${cls}"/>`);
+      const open = `<circle cx="${cx}" cy="${cy}" r="${r}" class="${cls}"${styleAttr}${dataAttr}>`;
+      out.push(title ? `${open}${title}</circle>` : open.replace(/>$/, "/>"));
     }
   }
   out.push(`</g>`);
