@@ -160,58 +160,77 @@ async function embedGemIcon(name) {
 
 const PRIMARY = "Killing Palm";
 const ALT_SKILLS = ["Staggering Palm", "Tempest Flurry", "Ice Strike", "Falling Thunder", "Glacial Cascade", "Charged Staff"];
-const skillIcons = new Map();
-for (const n of [PRIMARY, ...ALT_SKILLS]) skillIcons.set(n, await embedGemIcon(n));
-const primSupports = (maSupports.skills[PRIMARY] && maSupports.skills[PRIMARY].supports) || [];
-const supIcons = new Map();
-for (const s of primSupports.slice(0, 16)) supIcons.set(s.name, await embedGemIcon(s.name));
 
-const primInfo = skillInfoByName(PRIMARY);
+// Full skill loadout. `from` = level-bracket index it comes online (0=1-17 … 3=71+).
+// Every skill verified Staff/None/any-weapon (works unarmed via Hollow Palm).
+const LOADOUT = [
+  { role: "Main Attack", skill: PRIMARY, from: 0, main: true },
+  { role: "Movement", skill: "Gathering Storm", from: 0, supports: [] },
+  { role: "Block / Defence", skill: "Parry", from: 0, supports: [] },
+  { role: "Herald (persistent)", skill: "Herald of Ash", from: 1, supports: [] },
+  { role: "Warcry", skill: "Ancestral Cry", from: 2, supports: [] },
+  { role: "Curse", skill: "Vulnerability", from: 2, supports: ["Blasphemy"] },
+];
+
+const primSupports = (maSupports.skills[PRIMARY] && maSupports.skills[PRIMARY].supports) || [];
 const posSup = primSupports.filter((s) => s.delta > 0);
 const compatSup = primSupports.filter((s) => s.delta <= 0).slice(0, 10);
-// Supports ordered by measured value (positive DPS first, then the rest of the
-// PoB-verified-compatible set). Each level bracket opens more support sockets.
-const orderedSupports = [...posSup, ...compatSup];
+const orderedSupports = [...posSup, ...compatSup]; // best-measured first
+const MAIN_SUP_BY_BRACKET = [1, 3, 4, 5]; // support sockets open as you level
+
+// Embed icons for every gem shown anywhere in the skills tab.
+const gemIcons = new Map();
+const allGemNames = new Set([
+  ...LOADOUT.map((l) => l.skill),
+  ...LOADOUT.flatMap((l) => l.supports || []),
+  ...orderedSupports.map((s) => s.name),
+  ...ALT_SKILLS,
+]);
+for (const n of allGemNames) gemIcons.set(n, await embedGemIcon(n));
+
+const primInfo = skillInfoByName(PRIMARY);
 const SKILL_PHASES = [
-  { label: "Lv 1–17", n: 1 },
-  { label: "Lv 18–40", n: 3 },
-  { label: "Lv 41–70", n: 4 },
-  { label: "Lv 71+", n: 5 },
+  { label: "Lv 1–17" }, { label: "Lv 18–40" }, { label: "Lv 41–70" }, { label: "Lv 71+" },
 ];
-const socket = (name, icon, sub, pct, isMain) =>
+const socket = (name, sub, pct, isMain) =>
   `<div class="socket${isMain ? " main" : ""}">` +
-  `${icon ? `<img src="${icon}" alt="${name}">` : '<span class="noic"></span>'}` +
+  `${gemIcons.get(name) ? `<img src="${gemIcons.get(name)}" alt="${name}">` : '<span class="noic"></span>'}` +
   `<span class="so-nm">${name}</span>` +
   (sub ? `<span class="so-sub">${sub}</span>` : "") +
   (pct ? `<span class="so-pct">+${pct}%</span>` : "") +
   `</div>`;
 
+const groupCard = (l, bracketIdx) => {
+  const info = skillInfoByName(l.skill);
+  let supSockets = "";
+  if (l.main) {
+    const n = MAIN_SUP_BY_BRACKET[bracketIdx];
+    supSockets = orderedSupports.slice(0, n).map((s) => socket(s.name, null, s.delta > 0 ? s.pct : null, false)).join("");
+  } else if ((l.supports || []).length) {
+    supSockets = l.supports.map((s) => socket(s, null, null, false)).join("");
+  }
+  const ele = info ? (info.skillTypes.find((t) => ["Fire", "Cold", "Lightning", "Physical"].includes(t)) || "") : "";
+  const sub = `${ele}${info ? (ele ? " · " : "") + "Lv " + info.levelReq : ""}`;
+  const linked = supSockets ? `<span class="link-arrow">+</span><div class="support-sockets">${supSockets}</div>` : "";
+  return `<div class="grp"><div class="grp-role">${l.role}</div><div class="socket-row">${socket(l.skill, sub, null, true)}${linked}</div></div>`;
+};
+
 const skTabs = SKILL_PHASES.map((ph, i) =>
   `<button class="skbt${i === SKILL_PHASES.length - 1 ? " active" : ""}" data-skbt="${i}">${ph.label}</button>`
 ).join("");
-
 const skSetups = SKILL_PHASES.map((ph, i) => {
-  const sups = orderedSupports.slice(0, ph.n);
-  const supSockets = sups.map((s) =>
-    socket(s.name, supIcons.get(s.name), null, s.delta > 0 ? s.pct : null, false)
-  ).join("");
-  return `<div class="gem-setup${i === SKILL_PHASES.length - 1 ? "" : " hidden"}" data-skset="${i}">
-    <div class="socket-row">
-      ${socket(PRIMARY, skillIcons.get(PRIMARY), "main skill", null, true)}
-      <span class="link-arrow">+</span>
-      <div class="support-sockets">${supSockets}</div>
-    </div>
-  </div>`;
+  const groups = LOADOUT.filter((l) => l.from <= i).map((l) => groupCard(l, i)).join("");
+  return `<div class="gem-setup${i === SKILL_PHASES.length - 1 ? "" : " hidden"}" data-skset="${i}">${groups}</div>`;
 }).join("");
 
 const skillsHtml = `
-<section><h2>Skill setup by level</h2>
+<section><h2>Skill loadout by level</h2>
   <div class="sktabs">${skTabs}</div>
   ${skSetups}
-  <p class="note" style="max-width:620px;margin-top:14px">${cleanDesc(primInfo && primInfo.description)} Works unarmed via Hollow Palm; Culls low-life enemies and generates Power Charges on kill. Green % = measured DPS gain.</p>
+  <p class="note" style="max-width:640px;margin-top:14px">Full loadout — every skill works unarmed (Quarterstaff, or no weapon restriction). Heralds &amp; curses reserve Spirit. Green % on the main attack = measured DPS gain per support.</p>
 </section>
 <section><h2>Alternative main skills — all Quarterstaff (work unarmed)</h2>
-  <div class="sk-alts">${ALT_SKILLS.map((n) => { const i = skillInfoByName(n); const ic = skillIcons.get(n); const ele = i ? (i.skillTypes.find((t) => ["Fire", "Cold", "Lightning", "Physical"].includes(t)) || "") : ""; return `<div class="sk-alt">${ic ? `<img src="${ic}" alt="">` : '<span class="noic"></span>'}<div><b>${n}</b><span>${ele}${i ? " · Lv " + i.levelReq : ""}</span></div></div>`; }).join("")}</div>
+  <div class="sk-alts">${ALT_SKILLS.map((n) => { const i = skillInfoByName(n); const ele = i ? (i.skillTypes.find((t) => ["Fire", "Cold", "Lightning", "Physical"].includes(t)) || "") : ""; return `<div class="sk-alt">${gemIcons.get(n) ? `<img src="${gemIcons.get(n)}" alt="">` : '<span class="noic"></span>'}<div><b>${n}</b><span>${ele}${i ? " · Lv " + i.levelReq : ""}</span></div></div>`; }).join("")}</div>
 </section>`;
 
 const svg = renderTreeSvg(raw, {
@@ -288,9 +307,12 @@ const html = `<!doctype html>
   .sktabs{display:flex;gap:2px;flex-wrap:wrap;margin:0 0 16px;border-bottom:1px solid var(--line)}
   .skbt{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);padding:8px 15px;font-size:.85rem;cursor:pointer;font-weight:600}
   .skbt:hover{color:var(--fg)} .skbt.active{color:var(--gold);border-bottom-color:var(--acc)}
+  .gem-setup{display:flex;flex-direction:column;gap:12px}
   .gem-setup.hidden{display:none}
+  .grp{background:#15151b;border:1px solid var(--line);border-radius:10px;padding:13px 18px;max-width:780px}
+  .grp-role{font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--acc);margin-bottom:10px;font-weight:700}
   /* gem sockets */
-  .socket-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:#15151b;border:1px solid var(--line);border-radius:10px;padding:18px 20px;max-width:760px}
+  .socket-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
   .support-sockets{display:flex;gap:12px;flex-wrap:wrap}
   .socket{width:82px;text-align:center;font-size:.72rem;color:var(--dim)}
   .socket img{width:56px;height:56px;border-radius:10px;border:1px solid #333;background:#101015;display:block;margin:0 auto 5px;object-fit:cover}
