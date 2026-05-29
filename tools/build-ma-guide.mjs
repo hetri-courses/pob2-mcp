@@ -194,9 +194,13 @@ const SEC_SUP_BY_BRACKET = [0, 1, 2, 3];  // secondary damage skills get fewer, 
 // Monk has no cheap way to satisfy them (Adaptive Capability is Gemling-only;
 // the tree's Reduced Attribute Requirements nodes only shave ~12%).
 const MONK_ATTR_CAP = {
-  str: [20, 35, 55, 80],
-  dex: [50, 85, 120, 175],
-  int: [45, 80, 115, 165],
+  // Dex/Int are your main attributes and realistically reach ~100 by the end of
+  // the Lv 18-40 bracket (tree attribute nodes + gear), so the no-Strength
+  // supports (which need 100 Dex or 100 Int) unlock there. Strength is off-
+  // attribute and stays low, correctly keeping the 100-Str supports gated.
+  str: [20, 40, 60, 90],
+  dex: [55, 100, 145, 185],
+  int: [55, 100, 140, 180],
 };
 function attrUsable(name, bracketIdx) {
   const g = gemByName(name);
@@ -349,7 +353,7 @@ ${SKILL_PHASES.map((ph, i) => {
     `<span class="att">${a.dex}</span><span class="att">${a.int}</span></div>`;
 }).join("")}
 </div>
-<p class="note">This build runs on <b>Dexterity + Intelligence</b> — your weapon and damage gems want Dex/Int, your two high attributes. The <b>Strength</b> in the table is driven by two buff skills — <b>Herald of Ash</b> and <b>Ancestral Cry</b> need ~100 Str. On a Dex/Int Monk you either gear some Strength to run them, or drop them for Dex/Int utility. Likewise <b>Brutality and the lineage supports each need ~100 Str</b> and a Monk has no cheap way to reach it (Adaptive Capability is a Mercenary-only node; the tree's <i>Reduced Attribute Requirements</i> nodes shave only ~12%) — so your real support picks are the <b>no-Strength</b> ones already shown above (Concentrated Area, Hit and Run, crit). Keep <b>Int</b> high (curses/heralds) and <b>Dex</b> for the weapon.</p>
+<p class="note">This build runs on <b>Dexterity + Intelligence</b> — your weapon and damage gems want Dex/Int, your two high attributes. The <b>Strength</b> in the table is driven by two buff skills — <b>Herald of Ash</b> and <b>Ancestral Cry</b> need ~100 Str. On a Dex/Int Monk you either gear some Strength to run them, or drop them for Dex/Int utility. Likewise <b>Brutality and the lineage supports each need ~100 Str</b> and a Monk has no cheap way to reach it (Adaptive Capability is a Mercenary-only node; the tree's <i>Reduced Attribute Requirements</i> nodes shave only ~12%) — so your real support picks are the <b>no-Strength</b> ones already shown above (Concentrated Area, Hit and Run, crit). Keep <b>Int</b> high (curses/heralds) and <b>Dex</b> for the weapon. Note: your damage supports each need ~100 Dex/Int, so they come online around <b>Lv 30–40</b> as those attributes climb — before that, slot any basic low‑requirement support you pick up while leveling.</p>
 </section>`;
 
 const html = `<!doctype html>
