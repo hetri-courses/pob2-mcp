@@ -67,10 +67,17 @@ interface CachedTree {
 const CACHE = new Map<string, CachedTree>();
 
 /**
+ * Default passive-tree version for all static lookups. Override with the
+ * POB_TREE_VERSION env var (e.g. set to "0_5" for league-start theorycraft
+ * once the 0.5 tree.json is in place). Defaults to "0_4".
+ */
+export const DEFAULT_TREE_VERSION = process.env.POB_TREE_VERSION || "0_4";
+
+/**
  * Load and cache a tree-data version. `version` is the directory name under
  * TreeData/ (e.g. "0_4"). `forkPath` is the absolute path to PoB2's `src/`.
  */
-export function loadTree(forkPath: string, version = "0_4"): CachedTree {
+export function loadTree(forkPath: string, version = DEFAULT_TREE_VERSION): CachedTree {
   const cacheKey = `${forkPath}::${version}`;
   const hit = CACHE.get(cacheKey);
   if (hit) return hit;
@@ -144,7 +151,7 @@ function classify(n: RawNode): TreeNodeType {
 // ----- Lookup + search ------------------------------------------------------
 
 /** O(1) lookup by node ID. */
-export function getNode(forkPath: string, id: number, version = "0_4"): TreeNode | null {
+export function getNode(forkPath: string, id: number, version = DEFAULT_TREE_VERSION): TreeNode | null {
   return loadTree(forkPath, version).byId.get(id) ?? null;
 }
 
@@ -174,7 +181,7 @@ export function searchNodes(
   forkPath: string,
   query: string,
   options: SearchOptions = {},
-  version = "0_4"
+  version = DEFAULT_TREE_VERSION
 ): SearchResult[] {
   const { limit = 20, types, ascendancy, matchStats = false } = options;
   const tree = loadTree(forkPath, version);
@@ -225,7 +232,7 @@ export function searchNodes(
 export function resolveNodes(
   forkPath: string,
   ids: readonly number[],
-  version = "0_4"
+  version = DEFAULT_TREE_VERSION
 ): TreeNode[] {
   const tree = loadTree(forkPath, version);
   const out: TreeNode[] = [];
@@ -259,7 +266,7 @@ export function findPathToNode(
   /** Whether the target was already allocated (path = [], cost = 0). */
   alreadyAllocated: boolean;
 } | null {
-  const { version = "0_4", maxHops = 30 } = options;
+  const { version = DEFAULT_TREE_VERSION, maxHops = 30 } = options;
   const tree = loadTree(forkPath, version);
   const target = tree.byId.get(targetId);
   if (!target) return null;
@@ -332,7 +339,7 @@ export function findCandidateNeighbors(
   maxDepth = 1,
   options: { excludeTypes?: TreeNodeType[]; version?: string } = {}
 ): TreeNode[] {
-  const { excludeTypes = ["jewel-socket", "class-start"], version = "0_4" } = options;
+  const { excludeTypes = ["jewel-socket", "class-start"], version = DEFAULT_TREE_VERSION } = options;
   const tree = loadTree(forkPath, version);
   const allocatedSet = new Set<number>(allocated);
   const seen = new Set<number>(allocatedSet);

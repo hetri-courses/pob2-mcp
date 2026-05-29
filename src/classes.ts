@@ -18,6 +18,7 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { DEFAULT_TREE_VERSION } from "./treeData.js";
 
 export interface Ascendancy {
   /** Display name, e.g., "Invoker". */
@@ -41,7 +42,7 @@ export interface ClassInfo {
 const CLASS_CACHE = new Map<string, ClassInfo[]>();
 
 /** Load + cache class metadata for a tree version. */
-export function loadClasses(forkPath: string, version = "0_4"): ClassInfo[] {
+export function loadClasses(forkPath: string, version = DEFAULT_TREE_VERSION): ClassInfo[] {
   const cacheKey = `${forkPath}::${version}`;
   const hit = CLASS_CACHE.get(cacheKey);
   if (hit) return hit;
@@ -76,7 +77,7 @@ export function loadClasses(forkPath: string, version = "0_4"): ClassInfo[] {
 }
 
 /** Find a class by case-insensitive name. */
-export function findClass(forkPath: string, name: string, version = "0_4"): ClassInfo | null {
+export function findClass(forkPath: string, name: string, version = DEFAULT_TREE_VERSION): ClassInfo | null {
   const lower = name.toLowerCase();
   return loadClasses(forkPath, version).find((c) => c.name.toLowerCase() === lower) ?? null;
 }
@@ -86,7 +87,7 @@ export function findAscendancy(
   forkPath: string,
   className: string,
   ascendancyName: string,
-  version = "0_4"
+  version = DEFAULT_TREE_VERSION
 ): Ascendancy | null {
   const cls = findClass(forkPath, className, version);
   if (!cls) return null;

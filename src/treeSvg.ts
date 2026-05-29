@@ -16,6 +16,7 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { DEFAULT_TREE_VERSION } from "./treeData.js";
 
 interface RawGroup {
   x: number;
@@ -29,6 +30,9 @@ interface RawNodeFull {
   group?: number;
   orbit?: number;
   orbitIndex?: number;
+  /** Absolute coords if the source precomputed them (GGG export does). */
+  x?: number;
+  y?: number;
   isKeystone?: boolean;
   isNotable?: boolean;
   isMastery?: boolean;
@@ -58,7 +62,7 @@ interface RawTreeFull {
 
 /** Cached raw-tree loader (re-uses the same parse cost as treeData.ts but keeps geometry). */
 const RAW_CACHE = new Map<string, RawTreeFull>();
-export function loadRawTree(forkPath: string, version = "0_4"): RawTreeFull {
+export function loadRawTree(forkPath: string, version = DEFAULT_TREE_VERSION): RawTreeFull {
   const key = `${forkPath}::${version}`;
   const hit = RAW_CACHE.get(key);
   if (hit) return hit;
@@ -70,6 +74,11 @@ export function loadRawTree(forkPath: string, version = "0_4"): RawTreeFull {
 
 /** Compute the SVG (x, y) for a node. Returns null if positioning data missing. */
 export function nodeCoords(raw: RawTreeFull, node: RawNodeFull): { x: number; y: number } | null {
+  // Prefer precomputed absolute coords (GGG export ships these). Avoids any
+  // drift in orbit-geometry constants between patches.
+  if (typeof node.x === "number" && typeof node.y === "number") {
+    return { x: node.x, y: node.y };
+  }
   if (node.group == null || node.orbit == null) return null;
   const group = raw.groups[String(node.group)];
   if (!group || group.x == null || group.y == null) return null;

@@ -204,9 +204,46 @@ Fully quit and reopen Claude Desktop. All 39 tools should appear in a fresh chat
 | `POB_FORK_PATH` | (required for live tools) | Absolute path to `pob2-fork/src/` |
 | `POB2_HOT_RELOAD` | `0` | Set `1` to watch `src/**/*.ts` and `pob2-fork/src/API/*.lua` and reload modules + recycle the Lua bridge on change |
 | `POB2_POOL_SIZE` | `0` | Spawn N extra LuaBridges that round-robin over `calc_with`. ~10× speedup on `suggest_node_swaps` for N=2-3, at the cost of N×~200MB RAM. |
+| `POB_TREE_VERSION` | `0_4` | Default passive-tree version for all static tree tools (`search_tree_nodes`, `get_tree_node`, `find_path_to_node`, `resolve_tree_nodes`, `list_classes`, tree SVG). Set to `0_5` for league-start theorycraft once a `TreeData/0_5/tree.json` exists. |
 | `POB_WSL_DISTRO` | active distro | Override WSL distro (Windows only) |
 | `POB_TIMEOUT_MS` | `30000` | Per-request timeout for Lua bridge calls |
 | `POB_API_DEBUG` | `0` | Surface Lua-side diagnostics to stderr |
+
+## Getting ahead of a new patch (tree-level)
+
+When a new PoE2 patch drops, GGG publishes the authoritative passive-tree
+export at [grindinggear/poe2-skilltree-export](https://github.com/grindinggear/poe2-skilltree-export)
+(branch = version, e.g. `0.5.0`) the moment it's live — often hours before
+PoB ships its own `TreeData/<version>/tree.json`. Our **static** tree tools
+(search, pathing, node stats, class enumeration, SVG) read `tree.json`
+directly and don't need the calc engine, so you can do full tree-level
+theorycraft on a new tree immediately:
+
+```bash
+# 1. Grab GGG's export for the new version
+git clone --depth 1 --branch 0.5.0 \
+  https://github.com/grindinggear/poe2-skilltree-export.git /tmp/0.5tree
+
+# 2. Convert it to PoB's tree.json schema (reuses orbit constants from 0_4)
+node tools/ggg-to-pob-tree.mjs /tmp/0.5tree/data.json \
+  pob2-fork/src/TreeData/0_5/tree.json \
+  pob2-fork/src/TreeData/0_4/tree.json
+
+# 3. Point the static tools at it
+#    (set POB_TREE_VERSION=0_5 in your MCP client env)
+```
+
+You'll then have `list_classes` returning the new ascendancies (Martial
+Artist, Spirit Walker, …), `search_tree_nodes` finding new notables with
+their real stat text, `find_path_to_node` routing through the new tree, and
+the HTML guide's tree SVG rendering the new layout.
+
+> **What this does NOT do:** the calc engine still runs the *previous*
+> patch's formulas + gem data until PoB updates its Lua side. DPS/EHP numbers
+> on a brand-new patch's mechanics (e.g. Runic Ward, new gems) will be wrong
+> or missing. This is tree *structure* only — pathing, node stats,
+> ascendancy layout, visualization. For accurate calc, `git pull` your
+> pob2-fork once PoB ships the patch and drop GGG's data for theirs.
 
 ## Example workflows
 
