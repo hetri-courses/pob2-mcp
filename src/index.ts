@@ -41,6 +41,8 @@ import {
 } from "./theorycraft.js";
 import { synthesizeBuild } from "./buildGen.js";
 import { loadClasses } from "./classes.js";
+import { searchRunes, getRune } from "./runes.js";
+import { searchUniques, getUnique } from "./uniques.js";
 import { generateBuildGuide } from "./htmlGuide.js";
 import { searchGems, getGem, gemStats, type GemType } from "./gemData.js";
 
@@ -632,12 +634,65 @@ const TOOLS = [
     name: "list_classes",
     description:
       "List all PoE2 classes and their ascendancies for the loaded tree version. " +
-      "Useful before calling synthesize_build to pick valid (className, ascendancyName) pairs.",
+      "Useful before calling synthesize_build to pick valid (className, ascendancyName) pairs. " +
+      "Honors POB_TREE_VERSION (set 0_5 to see Martial Artist / Spirit Walker).",
     inputSchema: {
       type: "object",
       properties: {
-        treeVersion: { type: "string", description: "Tree version (default '0_4')." },
+        treeVersion: { type: "string", description: "Tree version (default from POB_TREE_VERSION env, else '0_4')." },
       },
+    },
+  },
+  // ----- Runes / Soul Cores (static, parses Data/ModRunes.lua) -----
+  {
+    name: "search_runes",
+    description:
+      "Search PoE2 runes + soul cores (socketable augments) by name, mod text, slot, or type. " +
+      "Reads Data/ModRunes.lua directly — no calc engine needed. Covers whatever version the " +
+      "pob2-fork is synced to (0.5's Ancient Runes + Runic Ward Runes appear automatically once " +
+      "the fork updates). Returns name, per-slot effects, and rank.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Substring to match against rune name / mod text. Empty = list all (up to limit)." },
+        slot: { type: "string", description: "Filter to runes usable in a slot (e.g., 'helmet', 'body armour', 'weapon')." },
+        type: { type: "string", description: "Filter by augment type (e.g., 'Rune', 'SoulCore')." },
+        limit: { type: "number", description: "Max results. Default 30." },
+      },
+    },
+  },
+  {
+    name: "get_rune",
+    description: "Get full details for a single rune / soul core by exact name (per-slot effects + rank).",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string", description: "Exact rune name." } },
+      required: ["name"],
+    },
+  },
+  // ----- Unique items (static, parses Data/Uniques/*.lua) -----
+  {
+    name: "search_uniques",
+    description:
+      "Search PoE2 unique items by name, base type, or mod text. Reads Data/Uniques/*.lua directly " +
+      "— no calc engine needed. Returns name, base type, slot category, variants, and mod lines " +
+      "(PoB markup stripped). New uniques appear automatically once the pob2-fork updates.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Substring to match against unique name / base type / mod text. Empty = list all (up to limit)." },
+        category: { type: "string", description: "Filter by slot category (amulet, body, staff, ring, etc.)." },
+        limit: { type: "number", description: "Max results. Default 30." },
+      },
+    },
+  },
+  {
+    name: "get_unique",
+    description: "Get full details for a single unique item by exact name (base type, variants, all mods).",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string", description: "Exact unique name, e.g., 'Astramentis'." } },
+      required: ["name"],
     },
   },
   // ----- Phase 6C: diagnostic -----
@@ -1041,9 +1096,44 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "list_classes": {
         const fp = requireForkPath();
         const a = (args as Record<string, unknown> | undefined) ?? {};
-        const version = typeof a.treeVersion === "string" ? a.treeVersion : "0_4";
+        const version = typeof a.treeVersion === "string" ? a.treeVersion : (process.env.POB_TREE_VERSION || "0_4");
         const classes = loadClasses(fp, version);
         return ok({ treeVersion: version, classes });
+      }
+      case "search_runes": {
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const results = searchRunes(fp, typeof a.query === "string" ? a.query : "", {
+          slot: typeof a.slot === "string" ? a.slot : undefined,
+          type: typeof a.type === "string" ? a.type : undefined,
+          limit: typeof a.limit === "number" ? a.limit : undefined,
+        });
+        return ok({ count: results.length, runes: results });
+      }
+      case "get_rune": {
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        if (typeof a.name !== "string") return err("name is required");
+        const rune = getRune(fp, a.name);
+        if (!rune) return err(`No rune named '${a.name}'`);
+        return ok({ rune });
+      }
+      case "search_uniques": {
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        const results = searchUniques(fp, typeof a.query === "string" ? a.query : "", {
+          category: typeof a.category === "string" ? a.category : undefined,
+          limit: typeof a.limit === "number" ? a.limit : undefined,
+        });
+        return ok({ count: results.length, uniques: results });
+      }
+      case "get_unique": {
+        const fp = requireForkPath();
+        const a = (args as Record<string, unknown> | undefined) ?? {};
+        if (typeof a.name !== "string") return err("name is required");
+        const unique = getUnique(fp, a.name);
+        if (!unique) return err(`No unique named '${a.name}'`);
+        return ok({ unique });
       }
       case "find_path_to_node": {
         const b = await ensureBridge();
