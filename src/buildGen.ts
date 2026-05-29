@@ -51,6 +51,12 @@ export interface SynthesizeBuildOptions {
   /** Main skill gem name, e.g., "Tempest Bell". Required if you want skill setup. */
   mainSkillName?: string;
   /**
+   * Secondary DAMAGE skills (e.g. ["Tempest Bell"]). Each gets its own socket
+   * group + engine-screened supports and is flagged into Full DPS, so the build
+   * is measured as a synergistic whole rather than a single skill.
+   */
+  secondarySkills?: string[];
+  /**
    * Number of tree points to allocate beyond the auto-given class-start nodes.
    * Default: derived from level (level - 2, capped at 100).
    */
@@ -94,7 +100,12 @@ export interface SynthesizeBuildResult {
     treeNodeIds: number[];
     mainSkill: string | null;
     supports: string[];
+    /** Secondary damage skills, each its own Full-DPS group with supports. */
+    secondary?: Array<{ skill: string; supports: string[]; groupIndex: number }>;
+    /** Main skill DPS (the selected skill only). */
     finalDPS?: number;
+    /** Whole-build aggregated DPS across all Full-DPS groups. */
+    finalFullDPS?: number;
     finalLife?: number;
     /** Per-slot list of equipped items, for the log. */
     equippedSlots?: string[];
@@ -398,80 +409,102 @@ async function satisfyAttributes(
 // ---------------------------------------------------------------------------
 // Skill loadout: main skill + suggested supports.
 // ---------------------------------------------------------------------------
-async function addSkillLoadout(
+/**
+ * Set up one socket group as a damage layer: create it (flagged into Full DPS),
+ * add the active skill, and fill it with engine-screened supports. Sets the
+ * group as the main selection first so suggest_gem_link's REAL compatibility
+ * screen (which only runs on the main group) applies to it — so each damage
+ * skill gets its own measured supports, not the weak tag-overlap fallback.
+ */
+async function addSkillGroup(
   bridge: LuaBridge,
   forkPath: string,
-  mainSkillName: string,
+  skillName: string,
   slot: string,
   supportCount: number,
   gemLevel: number,
+  includeInFullDPS: boolean,
   log: string[],
-): Promise<{ mainSkill: string; supports: string[]; socketGroupIndex: number }> {
-  // Validate the main skill exists
-  const mainGem = getGem(forkPath, mainSkillName);
-  if (!mainGem) throw new Error(`Unknown main skill: ${mainSkillName}`);
-  if (mainGem.isSupport) throw new Error(`'${mainSkillName}' is a support, not an active skill`);
+): Promise<{ skill: string; supports: string[]; groupIndex: number } | null> {
+  const gem = getGem(forkPath, skillName);
+  if (!gem) { log.push(`  skip '${skillName}': not in gem DB`); return null; }
+  if (gem.isSupport) { log.push(`  skip '${skillName}': it's a support, not an active skill`); return null; }
 
-  // Create the socket group
   const sg = await bridge.send({
     action: "create_socket_group",
-    params: { label: `${mainSkillName} setup`, slot, enabled: true },
+    params: { label: `${skillName} setup`, slot, enabled: true, includeInFullDPS },
   });
-  if (sg.ok === false) throw new Error(`create_socket_group: ${sg.error}`);
-  const sgInfo = (sg.socketGroup ?? {}) as { index?: number };
-  const groupIndex = sgInfo.index ?? 1;
-  log.push(`Created socket group #${groupIndex} '${mainSkillName} setup' in slot '${slot}'`);
+  if (sg.ok === false) { log.push(`  create_socket_group(${skillName}): ${sg.error}`); return null; }
+  const groupIndex = ((sg.socketGroup ?? {}) as { index?: number }).index ?? 1;
 
-  // Add main skill
   const addMain = await bridge.send({
     action: "add_gem",
-    params: { groupIndex, gemName: mainGem.name, level: gemLevel, quality: 0 },
+    params: { groupIndex, gemName: gem.name, level: gemLevel, quality: 0 },
   });
-  if (addMain.ok === false) throw new Error(`add_gem(main): ${addMain.error}`);
-  log.push(`  added main: ${mainGem.name} L${gemLevel}`);
+  if (addMain.ok === false) { log.push(`  add_gem(${skillName}): ${addMain.error}`); return null; }
 
-  // Set this group as main so suggest_gem_link targets it.
-  // NOTE: the action expects `mainSocketGroup`, not `groupIndex`.
-  const setMain = await bridge.send({
-    action: "set_main_selection",
-    params: { mainSocketGroup: groupIndex },
-  });
-  if (setMain.ok === false) log.push(`  warn: set_main_selection failed (${setMain.error})`);
+  // Make this the main selection so the engine support-screen targets THIS group.
+  await bridge.send({ action: "set_main_selection", params: { mainSocketGroup: groupIndex } });
 
-  // Run suggest_gem_link to find compatible supports
   const supports: string[] = [];
   try {
     const link = await suggestGemLink(bridge, forkPath, {
-      groupIndex,
-      maxCandidates: 40,
-      limit: supportCount,
-      simLevel: gemLevel,
-      simQuality: 0,
+      groupIndex, limit: supportCount, simLevel: gemLevel, simQuality: 0,
     });
-    log.push(`  suggest_gem_link: tested ${link.considered.candidatesTested}, baseline ${link.targetMetric}=${link.baseline}`);
-    // Pick top N positive-delta supports
     const positives = link.proposals.filter((p) => p.delta > 0).slice(0, supportCount);
-    if (positives.length === 0) {
-      log.push(`  warn: no positive-delta supports found. Using top-${supportCount} by raw ordering.`);
-    }
     const picks = positives.length > 0 ? positives : link.proposals.slice(0, supportCount);
     for (const p of picks) {
       const r = await bridge.send({
         action: "add_gem",
         params: { groupIndex, gemName: p.candidate.name, level: gemLevel, quality: 0 },
       });
-      if (r.ok === false) {
-        log.push(`    skip: add_gem(${p.candidate.name}): ${r.error}`);
-        continue;
-      }
+      if (r.ok === false) { log.push(`    skip ${p.candidate.name}: ${r.error}`); continue; }
       supports.push(p.candidate.name);
-      log.push(`  added support: ${p.candidate.name} (Δ${p.delta > 0 ? "+" : ""}${p.delta})`);
     }
   } catch (e) {
-    log.push(`  suggest_gem_link failed: ${(e as Error).message}; skipping supports`);
+    log.push(`  suggest_gem_link(${skillName}) failed: ${(e as Error).message}`);
+  }
+  log.push(`  group #${groupIndex}: ${gem.name}${includeInFullDPS ? " [FullDPS]" : ""} + [${supports.join(", ") || "no supports"}]`);
+  return { skill: gem.name, supports, groupIndex };
+}
+
+const SECONDARY_SLOTS = ["Body Armour", "Helmet", "Gloves", "Boots"];
+
+/**
+ * Build the full skill loadout: the main attack plus any secondary DAMAGE skills
+ * (e.g. Tempest Bell). Every damage group is flagged into Full DPS and gets its
+ * own supports, so the build is evaluated as a synergistic whole, not one skill.
+ */
+async function addSkillLoadout(
+  bridge: LuaBridge,
+  forkPath: string,
+  mainSkillName: string,
+  secondarySkills: string[],
+  slot: string,
+  supportCount: number,
+  gemLevel: number,
+  log: string[],
+): Promise<{
+  mainSkill: string;
+  supports: string[];
+  socketGroupIndex: number;
+  secondary: Array<{ skill: string; supports: string[]; groupIndex: number }>;
+}> {
+  const mainGroup = await addSkillGroup(bridge, forkPath, mainSkillName, slot, supportCount, gemLevel, true, log);
+  if (!mainGroup) throw new Error(`failed to set up main skill '${mainSkillName}'`);
+
+  const secondary: Array<{ skill: string; supports: string[]; groupIndex: number }> = [];
+  let si = 0;
+  for (const sk of secondarySkills) {
+    const slotFor = SECONDARY_SLOTS[si % SECONDARY_SLOTS.length];
+    si++;
+    const g = await addSkillGroup(bridge, forkPath, sk, slotFor, supportCount, gemLevel, true, log);
+    if (g) secondary.push(g);
   }
 
-  return { mainSkill: mainGem.name, supports, socketGroupIndex: groupIndex };
+  // Restore the primary as the main selection (TotalDPS + gem tooltips reflect it).
+  await bridge.send({ action: "set_main_selection", params: { mainSocketGroup: mainGroup.groupIndex } });
+  return { mainSkill: mainGroup.skill, supports: mainGroup.supports, socketGroupIndex: mainGroup.groupIndex, secondary };
 }
 
 // ---------------------------------------------------------------------------
@@ -590,14 +623,19 @@ export async function synthesizeBuild(
     );
   }
 
-  // 7. Skill loadout (optional)
-  let skillResult: { mainSkill: string; supports: string[] } | null = null;
+  // 7. Skill loadout (optional) — main + secondary damage skills, each a Full-DPS group.
+  let skillResult: {
+    mainSkill: string;
+    supports: string[];
+    secondary: Array<{ skill: string; supports: string[]; groupIndex: number }>;
+  } | null = null;
   if (opts.mainSkillName) {
     try {
       skillResult = await addSkillLoadout(
         bridge,
         forkPath,
         opts.mainSkillName,
+        opts.secondarySkills ?? [],
         slot,
         supportCount,
         gemLevel,
@@ -673,10 +711,12 @@ export async function synthesizeBuild(
 
   // Final stats snapshot
   let finalDPS: number | undefined;
+  let finalFullDPS: number | undefined;
   let finalLife: number | undefined;
   try {
     const stats = (await bridge.send({ action: "get_stats" })).stats as Record<string, number>;
     finalDPS = stats.TotalDPS;
+    finalFullDPS = stats.FullDPS;
     finalLife = stats.Life;
   } catch {
     /* non-fatal */
@@ -706,9 +746,11 @@ export async function synthesizeBuild(
       treeNodeIds: Array.from(allocated),
       mainSkill: skillResult?.mainSkill ?? null,
       supports: skillResult?.supports ?? [],
+      secondary: skillResult?.secondary ?? [],
       equippedSlots,
       calcRefineSwaps,
       finalDPS,
+      finalFullDPS,
       finalLife,
       content,
     },

@@ -136,10 +136,14 @@ export async function evaluateAgainstTarget(
   target: ContentTarget,
 ): Promise<ContentVerdict> {
   await bridge.send({ action: "set_config", params: { enemyLevel: target.level } });
-  const fields = ["TotalDPS", "TotalEHP", ...DMG_TYPES.map((t) => MAXHIT_FIELD[t])];
+  const fields = ["TotalDPS", "FullDPS", "TotalEHP", ...DMG_TYPES.map((t) => MAXHIT_FIELD[t])];
   const stats = ((await bridge.send({ action: "get_stats", params: { fields } })).stats ?? {}) as Record<string, number>;
 
-  const dps = Number(stats.TotalDPS ?? 0);
+  // Offense = whole-build Full DPS when the build aggregates multiple damage
+  // skills; otherwise the single main skill's TotalDPS.
+  const fullDps = Number(stats.FullDPS ?? 0);
+  const totalDps = Number(stats.TotalDPS ?? 0);
+  const dps = fullDps > totalDps ? fullDps : totalDps;
   const ehp = Number(stats.TotalEHP ?? 0);
   const enemyLife = atLevel(loadMonsterTables(forkPath).life, target.level) * (target.lifeMult ?? 1);
   const ttkSeconds = dps > 0 ? enemyLife / dps : Infinity;
