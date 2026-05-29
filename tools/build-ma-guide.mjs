@@ -176,6 +176,11 @@ const html = `<!doctype html>
   .hero{padding:34px 0 18px;border-bottom:1px solid var(--line);margin-bottom:24px}
   .hero h1{font-size:2.1rem;margin:0 0 4px}
   .hero .meta{color:var(--dim);font-size:.95rem} .hero .meta b{color:var(--gold)}
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:0 0 10px;flex-wrap:wrap}
+  .tabs button{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);padding:11px 18px;font-size:.92rem;cursor:pointer;font-weight:600;letter-spacing:.02em}
+  .tabs button:hover{color:var(--fg)}
+  .tabs button.active{color:var(--gold);border-bottom-color:var(--acc)}
+  .panel.hidden{display:none}
   section{margin:32px 0}
   h2{font-size:.85rem;letter-spacing:.14em;text-transform:uppercase;color:var(--acc);margin:0 0 12px;font-weight:700}
   p{margin:.4rem 0}
@@ -218,6 +223,14 @@ const html = `<!doctype html>
   <div class="meta"><b>Monk · Martial Artist</b> &nbsp;•&nbsp; Crit-Physical Unarmed &nbsp;•&nbsp; League Start &nbsp;•&nbsp; PoE2 <b>0.5 Return of the Ancients</b></div>
 </div>
 
+<nav class="tabs">
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="skills">Skills</button>
+  <button data-tab="tree">Passive Tree</button>
+  <button data-tab="gear">Defense &amp; Gear</button>
+</nav>
+
+<div class="panel" data-panel="overview">
 <section><div class="tldr">
   <div><div class="h">Strengths</div><ul>
     <li class="good">Weapon-independent — Hollow Palm makes your fists scale with gear</li>
@@ -240,11 +253,15 @@ const html = `<!doctype html>
 <p><code>+1% attack speed per 75 Evasion on armour</code> &nbsp;·&nbsp; <code>+0.1% crit chance per 10 Energy Shield on armour</code></p></div>
 <p class="note">Your Evasion/ES hybrid gear <i>is</i> the crit + speed engine, and Martial Artistry's quarterstaff crit bonus applies to your fists. The 0.5 ES nerf hit recovery, not flat ES — so ES still pays off here as a pure crit stat.</p></section>
 
+</div>
+<div class="panel hidden" data-panel="skills">
 <section><h2>Skills</h2>
 <table><tr><th>When</th><th>Skill</th><th>Role</th></tr>
 ${skillRows.map(([a, b, c]) => `<tr><td>${a}</td><td>${b}</td><td>${c}</td></tr>`).join("")}</table>
 <p class="note">Physical Monk strikes that work with Hollow Palm: Staggering Palm (stun), Rapid Assault, Killing Palm, Blood Hunt. Best pick confirms with 0.5 gem numbers.</p></section>
 
+</div>
+<div class="panel hidden" data-panel="tree">
 <section><h2>Ascendancy order</h2><ol>
   <li><b>Way of the Stonefist</b> — Fists of Stone, ignore attribute reqs</li>
   <li><b>Martial Master</b> — Combo from all attack hits (the engine)</li>
@@ -266,6 +283,8 @@ ${skillRows.map(([a, b, c]) => `<tr><td>${a}</td><td>${b}</td><td>${c}</td></tr>
 <p class="note" style="margin-top:12px">Connected path from the Monk start, coloured by when you allocate it. Hover any node — glowing path nodes <i>and</i> nearby notables/keystones — to read the actual effect. The crit (orange) phase replaces the early Combo-filler smalls on respec.${unreachable.length ? ` <br>Couldn't route: ${unreachable.join(", ")}.` : ""}</p>
 </section>
 
+</div>
+<div class="panel hidden" data-panel="gear">
 <section><h2>Defense</h2>
 <p class="note">Your offensive ev/ES gear pulls triple duty — no reliance on nerfed ES recovery:</p>
 <ul>
@@ -281,6 +300,7 @@ ${skillRows.map(([a, b, c]) => `<tr><td>${a}</td><td>${b}</td><td>${c}</td></tr>
   <li>Chase: flat ES + Evasion on armour, accuracy, attack speed → crit/multi at endgame</li>
   <li>Cap fire/cold/lightning res; chaos res helps with new content</li>
 </ul></section>
+</div>
 
 <footer>Passive tree from GGG's official 0.5 export (final). Gem stats, DPS, and the exact best skill confirm when PoB ships 0.5 calc data (≈ launch + hours).</footer>
 </div>
@@ -308,6 +328,7 @@ var TIP=${JSON.stringify(tipData)};
   var PHASE_VIEWS=${JSON.stringify(PHASE_VIEWS)};
   var phased=svg.querySelectorAll('[data-phase]');
   function showPhase(p){
+    window.__cur=p;
     for(var i=0;i<phased.length;i++){var el=phased[i];el.style.display=(+el.getAttribute('data-phase')<=p)?'':'none';}
     var v=PHASE_VIEWS[p-1]; if(v) set([v.x,v.y,v.w,v.h]); else set(init.slice());
     for(var k=1;k<=${PHASES.length};k++){var b=document.getElementById('ph'+k); if(b) b.className='wide ph'+(k===p?' active':'');}
@@ -333,6 +354,16 @@ var TIP=${JSON.stringify(tipData)};
   svg.addEventListener('mouseout',function(e){
     if(e.target.getAttribute&&e.target.getAttribute('data-id'))tip.style.opacity='0';
   });
+  window.__reframeTree=function(){showPhase(window.__cur||${PHASES.length});};
+})();
+(function(){ // tab switching
+  var tabs=document.querySelectorAll('.tabs button'), panels=document.querySelectorAll('.panel');
+  function activate(name){
+    for(var i=0;i<tabs.length;i++)tabs[i].classList.toggle('active',tabs[i].getAttribute('data-tab')===name);
+    for(var j=0;j<panels.length;j++)panels[j].classList.toggle('hidden',panels[j].getAttribute('data-panel')!==name);
+    if(name==='tree'&&window.__reframeTree)window.__reframeTree();
+  }
+  for(var i=0;i<tabs.length;i++)(function(t){t.onclick=function(){activate(t.getAttribute('data-tab'));};})(tabs[i]);
 })();
 </script>
 </body></html>`;
