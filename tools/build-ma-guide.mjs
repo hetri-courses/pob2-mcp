@@ -169,27 +169,34 @@ for (const s of primSupports.slice(0, 16)) supIcons.set(s.name, await embedGemIc
 const primInfo = skillInfoByName(PRIMARY);
 const posSup = primSupports.filter((s) => s.delta > 0);
 const compatSup = primSupports.filter((s) => s.delta <= 0).slice(0, 10);
-const supChip = (s, showPct) => {
+const gemLink = (s, showPct, compat) => {
   const ic = supIcons.get(s.name);
   const pct = showPct && s.pct != null ? `<span class="pct">+${s.pct}%</span>` : "";
-  return `<div class="sk-sup">${ic ? `<img src="${ic}" alt="">` : '<span class="noic"></span>'}<span>${s.name}</span>${pct}</div>`;
+  return `<div class="gem-link${compat ? " compat" : ""}">${ic ? `<img src="${ic}" alt="">` : '<span class="noic"></span>'}<span class="nm">${s.name}</span>${pct}</div>`;
 };
+const gemGroup = (mainName, mainIcon, sub, links) => `
+  <div class="gem-group">
+    <div class="gem-main">
+      <span class="gem-ic-lg">${mainIcon ? `<img src="${mainIcon}" alt="${mainName}">` : ""}</span>
+      <div><div class="gem-name">${mainName}</div><div class="gem-sub">${sub}</div></div>
+    </div>
+    <div class="gem-links">${links}</div>
+  </div>`;
+
+const mainLinks =
+  (posSup.map((s) => gemLink(s, true, false)).join("") ||
+    '<div class="gem-link"><span class="nm note">no measured gains on the test build</span></div>') +
+  (compatSup.length
+    ? `<div class="gem-divider">Compatible — scale once crit gear is in</div>${compatSup.map((s) => gemLink(s, false, true)).join("")}`
+    : "");
+
 const skillsHtml = `
-<section class="sk-hero">
-  <div class="sk-iconlg">${skillIcons.get(PRIMARY) ? `<img src="${skillIcons.get(PRIMARY)}" alt="${PRIMARY}">` : ""}</div>
-  <div>
-    <h3 style="margin:.1rem 0 .3rem">${PRIMARY}</h3>
-    <div class="sk-badges"><span>Quarterstaff</span><span>Physical</span><span>Strike</span><span>Usable Lv ${primInfo ? primInfo.levelReq : 0}</span></div>
-    <p class="note" style="margin:.3rem 0">${cleanDesc(primInfo && primInfo.description)}</p>
-    <p class="lead">Physical Quarterstaff strike — works unarmed via Hollow Palm. Culls low-life enemies and generates Power Charges on kill, feeding crit.</p>
-  </div>
+<section><h2>Skill setup</h2>
+  ${gemGroup(PRIMARY, skillIcons.get(PRIMARY), `Quarterstaff · Physical · Strike · usable Lv ${primInfo ? primInfo.levelReq : 0}`, mainLinks)}
+  <p class="note" style="max-width:540px;margin-top:12px">${cleanDesc(primInfo && primInfo.description)}</p>
+  <p class="note" style="max-width:540px">Works unarmed via Hollow Palm; Culls low-life enemies and generates Power Charges on kill (feeds crit). <b>%</b> = real DPS gain measured on a representative L90 build (0.4 calc). Crit / penetration supports climb once crit gear is in — the 21 Kalguuran supports + 0.5 tweaks confirm at launch.</p>
 </section>
-<section><h2>Support gems — measured DPS gain</h2>
-  <div class="sk-sups">${posSup.map((s) => supChip(s, true)).join("") || '<span class="note">none measured on the test build</span>'}</div>
-  ${compatSup.length ? `<p class="note" style="margin:14px 0 6px">Compatible (PoB-verified) supports that scale once crit gear is in — slot as you go:</p><div class="sk-sups dim">${compatSup.map((s) => supChip(s, false)).join("")}</div>` : ""}
-  <p class="note" style="margin-top:12px">DPS measured on a representative L90 build (0.4 calc). Heavy Swing &amp; Rage are universal physical gains; crit / penetration supports climb once crit gear is in. The 21 new Kalguuran supports + 0.5 tweaks confirm at launch.</p>
-</section>
-<section><h2>Alternative skills — all Quarterstaff (work unarmed)</h2>
+<section><h2>Alternative main skills — all Quarterstaff (work unarmed)</h2>
   <div class="sk-alts">${ALT_SKILLS.map((n) => { const i = skillInfoByName(n); const ic = skillIcons.get(n); const ele = i ? (i.skillTypes.find((t) => ["Fire", "Cold", "Lightning", "Physical"].includes(t)) || "") : ""; return `<div class="sk-alt">${ic ? `<img src="${ic}" alt="">` : '<span class="noic"></span>'}<div><b>${n}</b><span>${ele}${i ? " · Lv " + i.levelReq : ""}</span></div></div>`; }).join("")}</div>
 </section>
 <section><h2>Leveling by phase</h2>
@@ -271,6 +278,17 @@ const html = `<!doctype html>
   .sk-alt{display:flex;align-items:center;gap:9px;background:#16161b;border:1px solid var(--line);border-radius:7px;padding:7px 10px}
   .sk-alt img{width:34px;height:34px;border-radius:5px;flex:none} .sk-alt .noic{width:34px;height:34px;border-radius:5px;background:#2a2a33;flex:none}
   .sk-alt b{display:block;font-size:.9rem} .sk-alt span{font-size:.78rem;color:var(--dim)}
+  .gem-group{max-width:540px;background:#15151b;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .gem-main{display:flex;align-items:center;gap:13px;padding:13px 15px;background:#1c1c24;border-bottom:1px solid var(--line);border-left:3px solid var(--acc)}
+  .gem-ic-lg{flex:none;width:50px;height:50px;border-radius:8px;overflow:hidden;border:1px solid #333;display:block;background:#101015}
+  .gem-ic-lg img{width:100%;height:100%;object-fit:cover}
+  .gem-name{font-size:1.08rem;font-weight:700} .gem-sub{font-size:.8rem;color:var(--dim)}
+  .gem-links{padding:5px 0}
+  .gem-link{display:flex;align-items:center;gap:11px;padding:7px 15px}
+  .gem-link img{width:30px;height:30px;border-radius:6px;flex:none} .gem-link .noic{width:30px;height:30px;border-radius:6px;background:#2a2a33;flex:none}
+  .gem-link .nm{flex:1;font-size:.93rem} .gem-link .pct{color:var(--ok);font-weight:700;font-size:.85rem}
+  .gem-link.compat{opacity:.55} .gem-link.compat .nm{font-size:.88rem}
+  .gem-divider{padding:7px 15px 3px;font-size:.7rem;color:var(--dim);text-transform:uppercase;letter-spacing:.09em;border-top:1px solid var(--line);margin-top:4px}
   .trick{border-left:2px solid var(--acc);padding:2px 0 2px 14px;margin:.4rem 0;max-width:820px}
   .trick code{color:var(--gold);font-size:.9em}
   /* tree */
