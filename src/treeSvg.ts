@@ -136,6 +136,12 @@ export interface RenderTreeSvgOptions {
    * <title> labels are suppressed in favour of the host tooltip.
    */
   tooltipIds?: Set<number>;
+  /**
+   * Per-node icon image (data URI or URL) for allocated nodes — renders the
+   * real passive art clipped into the node circle, deduped via SVG patterns.
+   * Nodes without an entry fall back to the flat colour fill.
+   */
+  nodeIcons?: Map<number, string>;
   /** Optional CSS-color overrides. */
   colors?: {
     background?: string;
@@ -290,6 +296,17 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
     .na,.nta,.ka,.ja,.csa{stroke:#1a1208;stroke-width:5}`
     : "";
 
+  // Dedup icons into SVG patterns (one per unique image, reused via fill).
+  const iconPatterns = new Map<string, string>(); // dataUri/url -> pattern id
+  if (options.nodeIcons) {
+    let pi = 0;
+    for (const id of includedNodes.keys()) {
+      if (!allocated.has(id)) continue;
+      const uri = options.nodeIcons.get(id);
+      if (uri && !iconPatterns.has(uri)) iconPatterns.set(uri, "ic" + pi++);
+    }
+  }
+
   const out: string[] = [];
   const idAttr = options.svgId ? ` id="${options.svgId}"` : "";
   out.push(
@@ -299,14 +316,26 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
       `style="background:${colors.background};display:block;max-width:100%;height:auto;touch-action:none" ` +
       `role="img" aria-label="Passive skill tree">`,
   );
-  out.push(`<style>${style}${emph}</style>`);
-  if (options.emphasizeAllocated) {
-    out.push(
-      `<defs><filter id="glow" x="-120%" y="-120%" width="340%" height="340%">` +
-        `<feGaussianBlur stdDeviation="22" result="b"/>` +
-        `<feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>` +
-        `</filter></defs>`,
-    );
+  const icCss = iconPatterns.size ? `.ic{filter:url(#glow);stroke-width:14}` : "";
+  out.push(`<style>${style}${emph}${icCss}</style>`);
+  // Consolidated defs: glow filter + icon patterns.
+  if (options.emphasizeAllocated || iconPatterns.size) {
+    out.push(`<defs>`);
+    if (options.emphasizeAllocated) {
+      out.push(
+        `<filter id="glow" x="-120%" y="-120%" width="340%" height="340%">` +
+          `<feGaussianBlur stdDeviation="22" result="b"/>` +
+          `<feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>` +
+          `</filter>`,
+      );
+    }
+    for (const [uri, pid] of iconPatterns) {
+      out.push(
+        `<pattern id="${pid}" patternContentUnits="objectBoundingBox" width="1" height="1">` +
+          `<image href="${uri}" width="1" height="1" preserveAspectRatio="xMidYMid slice"/></pattern>`,
+      );
+    }
+    out.push(`</defs>`);
   }
 
   // Edges first (so nodes overlay them).
@@ -354,8 +383,21 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
     if (emphasize && alloc) r = Math.round(r * ALLOC_SCALE);
 
     const colorOverride = nodeColors?.get(id);
-    const styleAttr = colorOverride ? ` style="fill:${colorOverride}"` : "";
     const dataAttr = tooltipIds?.has(id) ? ` data-id="${id}"` : "";
+
+    // Icon branch: allocated node with real passive art → circle filled with
+    // its icon pattern + a phase-coloured ring.
+    const iconUri = alloc ? options.nodeIcons?.get(id) : undefined;
+    if (iconUri) {
+      const pid = iconPatterns.get(iconUri);
+      if (pid) {
+        const ring = colorOverride || colors.normalAlloc;
+        out.push(`<circle cx="${cx}" cy="${cy}" r="${r}" class="ic" style="fill:url(#${pid});stroke:${ring}"${dataAttr}/>`);
+        continue;
+      }
+    }
+
+    const styleAttr = colorOverride ? ` style="fill:${colorOverride}"` : "";
     // Native <title> only when we are NOT emitting data-id for a rich tooltip.
     const title = !tooltipIds && emphasize && alloc && node.name
       ? `<title>${node.name.replace(/[<&]/g, "")}</title>`

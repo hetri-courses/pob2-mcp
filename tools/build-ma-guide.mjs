@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadTree, findPathToNode } from "../build/treeData.js";
 import { loadRawTree, renderTreeSvg } from "../build/treeSvg.js";
+import { IconResolver } from "../build/icons.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const forkPath = "D:\\pob2-mcp\\pob2-fork\\src";
@@ -82,6 +83,36 @@ for (const id of tooltipIds) {
   };
 }
 
+// ---- Fetch + embed real passive-node icons (poe2db CDN, deduped) -----------
+const outDir0 = path.join(here, "..", "generated");
+const resolver = new IconResolver(path.join(outDir0, ".icon-cache"));
+const iconByNode = new Map(); // id -> webp path
+const uniquePaths = new Set();
+for (const id of allocated) {
+  const ic = raw.nodes[id] && raw.nodes[id].icon;
+  if (!ic) continue;
+  const webp = ic.replace(/\.(png|dds)$/i, ".webp").replace(/\\/g, "/");
+  iconByNode.set(id, webp);
+  uniquePaths.add(webp);
+}
+const uriByPath = new Map();
+let iconHit = 0, iconMiss = 0;
+for (const webp of uniquePaths) {
+  const ref = {
+    src: "https://cdn.poe2db.tw/image/" + webp,
+    kind: "passive-normal",
+    cacheKey: "passive-" + webp.replace(/[^a-z0-9.]/gi, "_"),
+    mime: "image/webp",
+  };
+  const r = await resolver.embed(ref, { timeoutMs: 12000 });
+  if (r) { uriByPath.set(webp, r.dataUri); iconHit++; } else iconMiss++;
+}
+const nodeIcons = new Map();
+for (const [id, webp] of iconByNode) {
+  const u = uriByPath.get(webp);
+  if (u) nodeIcons.set(id, u);
+}
+
 const svg = renderTreeSvg(raw, {
   allocated,
   ascendancyName: "Martial Artist",
@@ -92,6 +123,7 @@ const svg = renderTreeSvg(raw, {
   frameNodeIds,
   nodeColors,
   tooltipIds,
+  nodeIcons,
   colors: { edgeAlloc: "#cdbb88" },
 });
 
@@ -278,5 +310,6 @@ writeFileSync(outPath, html, "utf8");
 console.log(`Wrote ${outPath}  (${(Buffer.byteLength(html) / 1024).toFixed(0)}KB)`);
 console.log(`  path nodes: ${frameNodeIds.size} (main tree) + ${allocated.size - frameNodeIds.size} ascendancy`);
 console.log(`  tooltip nodes: ${Object.keys(tipData).length}`);
+console.log(`  node icons: ${nodeIcons.size}/${iconByNode.size} embedded (${uriByPath.size} unique fetched, ${iconMiss} missing)`);
 console.log(`  reached landmarks: ${reachedLandmarks.length}/${PHASES.reduce((a, p) => a + p.targets.length, 0)}`);
 if (unreachable.length) console.log(`  UNREACHABLE: ${unreachable.join(", ")}`);
