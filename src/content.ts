@@ -73,6 +73,12 @@ export interface ContentTarget {
   lifeMult?: number;
   /** Offense passes if TTK ≤ this (seconds). */
   ttkBudgetSec: number;
+  /**
+   * Minimum effective HP to consider the build non-squishy for this target,
+   * on top of the per-hit survivability check. e.g. community consensus is
+   * ~6000+ EHP for the Arbiter of Ash. 0 = no floor.
+   */
+  ehpFloor?: number;
 }
 
 /**
@@ -83,7 +89,7 @@ export interface ContentTarget {
  */
 export const DEFAULT_TARGETS: ContentTarget[] = [
   { name: "Endgame map pack (rare, lvl 82)", level: 82, tier: "boss", ttkBudgetSec: 4, lifeMult: 1 },
-  { name: "Pinnacle boss (lvl 84)", level: 84, tier: "pinnacle", ttkBudgetSec: 30, lifeMult: 1 },
+  { name: "Pinnacle boss (lvl 84)", level: 84, tier: "pinnacle", ttkBudgetSec: 30, lifeMult: 1, ehpFloor: 6000 },
 ];
 
 /** Per-type incoming hit of a {tier} enemy at {level}: table*1.5*mult (chaos /2.5). */
@@ -148,7 +154,8 @@ export async function evaluateAgainstTarget(
     return { type, incoming: Math.round(inc), maxHitTaken: Math.round(maxHit), survived, marginPct };
   });
   const weakestHit = hits.reduce((a, b) => (b.marginPct < a.marginPct ? b : a));
-  const defenseOk = hits.every((h) => h.survived);
+  const ehpOk = !target.ehpFloor || ehp >= target.ehpFloor;
+  const defenseOk = hits.every((h) => h.survived) && ehpOk;
 
   const verdict: ContentVerdict["verdict"] =
     dps <= 0 ? "broken"
@@ -157,10 +164,11 @@ export async function evaluateAgainstTarget(
           : !defenseOk ? "squishy" : "too-slow";
 
   const ttkStr = Number.isFinite(ttkSeconds) ? `${ttkSeconds.toFixed(1)}s` : "∞";
+  const ehpNote = target.ehpFloor ? ` EHP ${Math.round(ehp)}${ehpOk ? "≥" : "<"}${target.ehpFloor}.` : "";
   const summary =
     `${target.name}: ${verdict.toUpperCase()} — ` +
     `offense ${offenseOk ? "OK" : "FAIL"} (TTK ${ttkStr} vs ${target.ttkBudgetSec}s budget, DPS ${Math.round(dps)} vs ${Math.round(enemyLife)} life); ` +
-    `defense ${defenseOk ? "OK" : "FAIL"} (weakest: ${weakestHit.type} hit ${weakestHit.incoming} vs max-survivable ${weakestHit.maxHitTaken}, ${weakestHit.marginPct >= 0 ? "+" : ""}${weakestHit.marginPct}% margin).`;
+    `defense ${defenseOk ? "OK" : "FAIL"} (weakest: ${weakestHit.type} hit ${weakestHit.incoming} vs max-survivable ${weakestHit.maxHitTaken}, ${weakestHit.marginPct >= 0 ? "+" : ""}${weakestHit.marginPct}% margin).${ehpNote}`;
 
   return { target, dps, enemyLife, ttkSeconds, offenseOk, ehp, hits, weakest: weakestHit.type, defenseOk, verdict, summary };
 }

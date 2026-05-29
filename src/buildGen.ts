@@ -34,6 +34,7 @@ import { findClass, findAscendancy, type Ascendancy } from "./classes.js";
 import { loadTree, findPathToNode, type TreeNode } from "./treeData.js";
 import { getGem } from "./gemData.js";
 import { buildAttribCatalog } from "./attributes.js";
+import { evaluateBuild } from "./content.js";
 import { suggestGemLink, suggestNodeSwaps } from "./theorycraft.js";
 import { encodeBuildCode } from "./codec.js";
 import { generateGear } from "./gearGen.js";
@@ -99,6 +100,8 @@ export interface SynthesizeBuildResult {
     equippedSlots?: string[];
     /** Number of calc-refinement swaps applied. */
     calcRefineSwaps?: number;
+    /** Content verdicts: is it good vs real enemies (TTK + survivability)? */
+    content?: Array<{ target: string; verdict: string; summary: string }>;
   };
   /** Step-by-step log of what we did. Helpful when synthesis disappoints. */
   log: string[];
@@ -679,6 +682,19 @@ export async function synthesizeBuild(
     /* non-fatal */
   }
 
+  // 10. Content check — is it actually good? TTK + survivability vs real enemies,
+  //     so the result is validated against content, not just a DPS number.
+  let content: Array<{ target: string; verdict: string; summary: string }> = [];
+  if (skillResult != null) {
+    try {
+      const verdicts = await evaluateBuild(bridge, forkPath);
+      content = verdicts.map((v) => ({ target: v.target.name, verdict: v.verdict, summary: v.summary }));
+      for (const v of verdicts) log.push(`Content: ${v.summary}`);
+    } catch (e) {
+      log.push(`Content eval skipped: ${(e as Error).message}`);
+    }
+  }
+
   return {
     buildCode,
     buildXml,
@@ -694,6 +710,7 @@ export async function synthesizeBuild(
       calcRefineSwaps,
       finalDPS,
       finalLife,
+      content,
     },
     log,
     elapsedMs: Date.now() - start,

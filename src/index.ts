@@ -40,6 +40,7 @@ import {
   suggestGemLink,
 } from "./theorycraft.js";
 import { synthesizeBuild } from "./buildGen.js";
+import { evaluateBuild } from "./content.js";
 import { loadClasses } from "./classes.js";
 import { searchRunes, getRune } from "./runes.js";
 import { searchUniques, getUnique } from "./uniques.js";
@@ -706,6 +707,19 @@ const TOOLS = [
       "calls, ~50ms.",
     inputSchema: { type: "object", properties: {} },
   },
+  {
+    name: "evaluate_build",
+    description:
+      "Judge whether the loaded build can actually CLEAR its content, not just whether it has a " +
+      "big DPS number. For each target (default: endgame map pack + pinnacle boss) it computes " +
+      "OFFENSE = time-to-kill (enemy life / DPS) and DEFENSE = per-damage-type survivability " +
+      "(the enemy's hit vs your MaximumHitTaken) + an EHP floor, using PoB2's own monster life/" +
+      "damage tables and boss multipliers. Returns a verdict per target (good / squishy / " +
+      "too-slow / squishy-and-slow / broken) with the weakest damage type and margins. " +
+      "Note: offense TTK uses PoB's base monster-life reference (set a target lifeMult for a " +
+      "specific boss's real HP); the defense check uses PoB's exact pinnacle damage multiplier.",
+    inputSchema: { type: "object", properties: {} },
+  },
   // ----- Phase 6B: pathfinding -----
   {
     name: "find_path_to_node",
@@ -1070,6 +1084,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const b = await ensureBridge();
         const result = await bottleneckAnalysis(b);
         return ok(result);
+      }
+      case "evaluate_build": {
+        const b = await ensureBridge();
+        const fp = requireForkPath();
+        const verdicts = await evaluateBuild(b, fp);
+        return ok({ verdicts });
       }
       case "synthesize_build": {
         const b = await ensureBridge();
