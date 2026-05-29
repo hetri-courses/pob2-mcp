@@ -188,12 +188,32 @@ const allGemNames = new Set([
 ]);
 for (const n of allGemNames) gemIcons.set(n, await embedGemIcon(n));
 
+// Hover-tooltip data for every gem shown (active skills + supports).
+const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const TYPE_TAGS = ["Attack", "Spell", "Melee", "Projectile", "Area", "Persistent", "Warcry", "Channelling", "Slam", "Strike", "Physical", "Fire", "Cold", "Lightning", "Chaos"];
+const gemTip = {};
+for (const name of allGemNames) {
+  const gem = gemByName(name);
+  const info = gem ? getSkillInfo(forkPath, gem.grantedEffectId) : null;
+  if (!info && !gem) continue;
+  const isSup = gem && gem.isSupport;
+  // Only show a weapon when it's a real 1-2 type restriction (e.g. Staff);
+  // skills usable with most weapons (heralds, curses) list ~all of them.
+  const weapBit = !isSup && info && info.weaponTypes.length >= 1 && info.weaponTypes.length <= 2
+    ? info.weaponTypes.slice(0, 1) : [];
+  const typeBits = isSup
+    ? ["Support"]
+    : [...weapBit, ...((info ? info.skillTypes : []).filter((t) => TYPE_TAGS.includes(t)).slice(0, 3))];
+  if (info) typeBits.push("Lv " + info.levelReq);
+  gemTip[name] = { n: esc(name), t: esc(typeBits.join(" · ")), d: esc(cleanDesc(info && info.description)) };
+}
+
 const primInfo = skillInfoByName(PRIMARY);
 const SKILL_PHASES = [
   { label: "Lv 1–17" }, { label: "Lv 18–40" }, { label: "Lv 41–70" }, { label: "Lv 71+" },
 ];
 const socket = (name, sub, pct, isMain) =>
-  `<div class="socket${isMain ? " main" : ""}">` +
+  `<div class="socket${isMain ? " main" : ""}" data-gem="${name}">` +
   `${gemIcons.get(name) ? `<img src="${gemIcons.get(name)}" alt="${name}">` : '<span class="noic"></span>'}` +
   `<span class="so-nm">${name}</span>` +
   (sub ? `<span class="so-sub">${sub}</span>` : "") +
@@ -230,7 +250,7 @@ const skillsHtml = `
   <p class="note" style="max-width:640px;margin-top:14px">Full loadout — every skill works unarmed (Quarterstaff, or no weapon restriction). Heralds &amp; curses reserve Spirit. Green % on the main attack = measured DPS gain per support.</p>
 </section>
 <section><h2>Alternative main skills — all Quarterstaff (work unarmed)</h2>
-  <div class="sk-alts">${ALT_SKILLS.map((n) => { const i = skillInfoByName(n); const ele = i ? (i.skillTypes.find((t) => ["Fire", "Cold", "Lightning", "Physical"].includes(t)) || "") : ""; return `<div class="sk-alt">${gemIcons.get(n) ? `<img src="${gemIcons.get(n)}" alt="">` : '<span class="noic"></span>'}<div><b>${n}</b><span>${ele}${i ? " · Lv " + i.levelReq : ""}</span></div></div>`; }).join("")}</div>
+  <div class="sk-alts">${ALT_SKILLS.map((n) => { const i = skillInfoByName(n); const ele = i ? (i.skillTypes.find((t) => ["Fire", "Cold", "Lightning", "Physical"].includes(t)) || "") : ""; return `<div class="sk-alt" data-gem="${n}">${gemIcons.get(n) ? `<img src="${gemIcons.get(n)}" alt="">` : '<span class="noic"></span>'}<div><b>${n}</b><span>${ele}${i ? " · Lv " + i.levelReq : ""}</span></div></div>`; }).join("")}</div>
 </section>`;
 
 const svg = renderTreeSvg(raw, {
@@ -497,6 +517,26 @@ var TIP=${JSON.stringify(tipData)};
     for(var k=0;k<bts.length;k++)bts[k].classList.toggle('active',bts[k]===b);
     for(var k=0;k<sets.length;k++)sets[k].classList.toggle('hidden',sets[k].getAttribute('data-skset')!==idx);
   };})(bts[i]);
+})();
+(function(){ // gem hover tooltips (skills + supports)
+  var GEMTIP=${JSON.stringify(gemTip)};
+  var tip=document.getElementById('tip');
+  document.addEventListener('mouseover',function(e){
+    var el=e.target.closest&&e.target.closest('[data-gem]'); if(!el)return;
+    var d=GEMTIP[el.getAttribute('data-gem')]; if(!d)return;
+    tip.innerHTML='<div class="tn">'+d.n+'</div>'+(d.t?'<div class="tt">'+d.t+'</div>':'')+(d.d?'<div class="ts">'+d.d+'</div>':'');
+    tip.style.opacity='1';
+  });
+  document.addEventListener('mousemove',function(e){
+    if(tip.style.opacity!=='1'||!(e.target.closest&&e.target.closest('[data-gem]')))return;
+    var x=e.clientX+16,y=e.clientY+16;
+    if(x+340>window.innerWidth)x=e.clientX-340;
+    if(y+160>window.innerHeight)y=e.clientY-160;
+    tip.style.left=x+'px';tip.style.top=y+'px';
+  });
+  document.addEventListener('mouseout',function(e){
+    if(e.target.closest&&e.target.closest('[data-gem]'))tip.style.opacity='0';
+  });
 })();
 </script>
 </body></html>`;
