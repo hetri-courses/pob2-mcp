@@ -169,43 +169,49 @@ for (const s of primSupports.slice(0, 16)) supIcons.set(s.name, await embedGemIc
 const primInfo = skillInfoByName(PRIMARY);
 const posSup = primSupports.filter((s) => s.delta > 0);
 const compatSup = primSupports.filter((s) => s.delta <= 0).slice(0, 10);
-const gemLink = (s, showPct, compat) => {
-  const ic = supIcons.get(s.name);
-  const pct = showPct && s.pct != null ? `<span class="pct">+${s.pct}%</span>` : "";
-  return `<div class="gem-link${compat ? " compat" : ""}">${ic ? `<img src="${ic}" alt="">` : '<span class="noic"></span>'}<span class="nm">${s.name}</span>${pct}</div>`;
-};
-const gemGroup = (mainName, mainIcon, sub, links) => `
-  <div class="gem-group">
-    <div class="gem-main">
-      <span class="gem-ic-lg">${mainIcon ? `<img src="${mainIcon}" alt="${mainName}">` : ""}</span>
-      <div><div class="gem-name">${mainName}</div><div class="gem-sub">${sub}</div></div>
-    </div>
-    <div class="gem-links">${links}</div>
-  </div>`;
+// Supports ordered by measured value (positive DPS first, then the rest of the
+// PoB-verified-compatible set). Each level bracket opens more support sockets.
+const orderedSupports = [...posSup, ...compatSup];
+const SKILL_PHASES = [
+  { label: "Lv 1–17", n: 1 },
+  { label: "Lv 18–40", n: 3 },
+  { label: "Lv 41–70", n: 4 },
+  { label: "Lv 71+", n: 5 },
+];
+const socket = (name, icon, sub, pct, isMain) =>
+  `<div class="socket${isMain ? " main" : ""}">` +
+  `${icon ? `<img src="${icon}" alt="${name}">` : '<span class="noic"></span>'}` +
+  `<span class="so-nm">${name}</span>` +
+  (sub ? `<span class="so-sub">${sub}</span>` : "") +
+  (pct ? `<span class="so-pct">+${pct}%</span>` : "") +
+  `</div>`;
 
-const mainLinks =
-  (posSup.map((s) => gemLink(s, true, false)).join("") ||
-    '<div class="gem-link"><span class="nm note">no measured gains on the test build</span></div>') +
-  (compatSup.length
-    ? `<div class="gem-divider">Compatible — scale once crit gear is in</div>${compatSup.map((s) => gemLink(s, false, true)).join("")}`
-    : "");
+const skTabs = SKILL_PHASES.map((ph, i) =>
+  `<button class="skbt${i === SKILL_PHASES.length - 1 ? " active" : ""}" data-skbt="${i}">${ph.label}</button>`
+).join("");
+
+const skSetups = SKILL_PHASES.map((ph, i) => {
+  const sups = orderedSupports.slice(0, ph.n);
+  const supSockets = sups.map((s) =>
+    socket(s.name, supIcons.get(s.name), null, s.delta > 0 ? s.pct : null, false)
+  ).join("");
+  return `<div class="gem-setup${i === SKILL_PHASES.length - 1 ? "" : " hidden"}" data-skset="${i}">
+    <div class="socket-row">
+      ${socket(PRIMARY, skillIcons.get(PRIMARY), "main skill", null, true)}
+      <span class="link-arrow">+</span>
+      <div class="support-sockets">${supSockets}</div>
+    </div>
+  </div>`;
+}).join("");
 
 const skillsHtml = `
-<section><h2>Skill setup</h2>
-  ${gemGroup(PRIMARY, skillIcons.get(PRIMARY), `Quarterstaff · Physical · Strike · usable Lv ${primInfo ? primInfo.levelReq : 0}`, mainLinks)}
-  <p class="note" style="max-width:540px;margin-top:12px">${cleanDesc(primInfo && primInfo.description)}</p>
-  <p class="note" style="max-width:540px">Works unarmed via Hollow Palm; Culls low-life enemies and generates Power Charges on kill (feeds crit). <b>%</b> = real DPS gain measured on a representative L90 build (0.4 calc). Crit / penetration supports climb once crit gear is in — the 21 Kalguuran supports + 0.5 tweaks confirm at launch.</p>
+<section><h2>Skill setup by level</h2>
+  <div class="sktabs">${skTabs}</div>
+  ${skSetups}
+  <p class="note" style="max-width:620px;margin-top:14px">${cleanDesc(primInfo && primInfo.description)} Works unarmed via Hollow Palm; Culls low-life enemies and generates Power Charges on kill. Green % = measured DPS gain.</p>
 </section>
 <section><h2>Alternative main skills — all Quarterstaff (work unarmed)</h2>
   <div class="sk-alts">${ALT_SKILLS.map((n) => { const i = skillInfoByName(n); const ic = skillIcons.get(n); const ele = i ? (i.skillTypes.find((t) => ["Fire", "Cold", "Lightning", "Physical"].includes(t)) || "") : ""; return `<div class="sk-alt">${ic ? `<img src="${ic}" alt="">` : '<span class="noic"></span>'}<div><b>${n}</b><span>${ele}${i ? " · Lv " + i.levelReq : ""}</span></div></div>`; }).join("")}</div>
-</section>
-<section><h2>Leveling by phase</h2>
-  <table><tr><th>Bracket</th><th>Skill setup</th></tr>
-  <tr><td>1–17</td><td>${PRIMARY} (Lv 0) — start swinging; slot ${posSup[0] ? posSup[0].name : "your first support"} as soon as it drops</td></tr>
-  <tr><td>18–40</td><td>+ ${posSup[1] ? posSup[1].name : "next support"}; level the gem, add supports as sockets open</td></tr>
-  <tr><td>41–70</td><td>Full link; Hollow Palm online → drop your weapon, go unarmed</td></tr>
-  <tr><td>71+</td><td>Re-rank supports once crit gear is in (crit-multi / penetration climb)</td></tr>
-  </table>
 </section>`;
 
 const svg = renderTreeSvg(raw, {
@@ -278,17 +284,22 @@ const html = `<!doctype html>
   .sk-alt{display:flex;align-items:center;gap:9px;background:#16161b;border:1px solid var(--line);border-radius:7px;padding:7px 10px}
   .sk-alt img{width:34px;height:34px;border-radius:5px;flex:none} .sk-alt .noic{width:34px;height:34px;border-radius:5px;background:#2a2a33;flex:none}
   .sk-alt b{display:block;font-size:.9rem} .sk-alt span{font-size:.78rem;color:var(--dim)}
-  .gem-group{max-width:540px;background:#15151b;border:1px solid var(--line);border-radius:10px;overflow:hidden}
-  .gem-main{display:flex;align-items:center;gap:13px;padding:13px 15px;background:#1c1c24;border-bottom:1px solid var(--line);border-left:3px solid var(--acc)}
-  .gem-ic-lg{flex:none;width:50px;height:50px;border-radius:8px;overflow:hidden;border:1px solid #333;display:block;background:#101015}
-  .gem-ic-lg img{width:100%;height:100%;object-fit:cover}
-  .gem-name{font-size:1.08rem;font-weight:700} .gem-sub{font-size:.8rem;color:var(--dim)}
-  .gem-links{padding:5px 0}
-  .gem-link{display:flex;align-items:center;gap:11px;padding:7px 15px}
-  .gem-link img{width:30px;height:30px;border-radius:6px;flex:none} .gem-link .noic{width:30px;height:30px;border-radius:6px;background:#2a2a33;flex:none}
-  .gem-link .nm{flex:1;font-size:.93rem} .gem-link .pct{color:var(--ok);font-weight:700;font-size:.85rem}
-  .gem-link.compat{opacity:.55} .gem-link.compat .nm{font-size:.88rem}
-  .gem-divider{padding:7px 15px 3px;font-size:.7rem;color:var(--dim);text-transform:uppercase;letter-spacing:.09em;border-top:1px solid var(--line);margin-top:4px}
+  /* skill sub-tabs by level */
+  .sktabs{display:flex;gap:2px;flex-wrap:wrap;margin:0 0 16px;border-bottom:1px solid var(--line)}
+  .skbt{background:none;border:none;border-bottom:2px solid transparent;color:var(--dim);padding:8px 15px;font-size:.85rem;cursor:pointer;font-weight:600}
+  .skbt:hover{color:var(--fg)} .skbt.active{color:var(--gold);border-bottom-color:var(--acc)}
+  .gem-setup.hidden{display:none}
+  /* gem sockets */
+  .socket-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:#15151b;border:1px solid var(--line);border-radius:10px;padding:18px 20px;max-width:760px}
+  .support-sockets{display:flex;gap:12px;flex-wrap:wrap}
+  .socket{width:82px;text-align:center;font-size:.72rem;color:var(--dim)}
+  .socket img{width:56px;height:56px;border-radius:10px;border:1px solid #333;background:#101015;display:block;margin:0 auto 5px;object-fit:cover}
+  .socket .noic{width:56px;height:56px;border-radius:10px;background:#2a2a33;display:block;margin:0 auto 5px}
+  .socket.main{width:96px} .socket.main img,.socket.main .noic{width:72px;height:72px;border:2px solid var(--acc);box-shadow:0 0 14px rgba(255,138,61,.35)}
+  .socket .so-nm{display:block;line-height:1.18;color:var(--fg);font-size:.78rem}
+  .socket .so-sub{display:block;font-size:.68rem;color:var(--dim)}
+  .socket .so-pct{display:block;color:var(--ok);font-weight:700;font-size:.72rem;margin-top:2px}
+  .link-arrow{color:var(--dim);font-size:1.5rem;font-weight:300}
   .trick{border-left:2px solid var(--acc);padding:2px 0 2px 14px;margin:.4rem 0;max-width:820px}
   .trick code{color:var(--gold);font-size:.9em}
   /* tree */
@@ -456,6 +467,14 @@ var TIP=${JSON.stringify(tipData)};
     if(name==='tree'&&window.__reframeTree)window.__reframeTree();
   }
   for(var i=0;i<tabs.length;i++)(function(t){t.onclick=function(){activate(t.getAttribute('data-tab'));};})(tabs[i]);
+})();
+(function(){ // skill level sub-tabs
+  var bts=document.querySelectorAll('.skbt'), sets=document.querySelectorAll('.gem-setup');
+  for(var i=0;i<bts.length;i++)(function(b){b.onclick=function(){
+    var idx=b.getAttribute('data-skbt');
+    for(var k=0;k<bts.length;k++)bts[k].classList.toggle('active',bts[k]===b);
+    for(var k=0;k<sets.length;k++)sets[k].classList.toggle('hidden',sets[k].getAttribute('data-skset')!==idx);
+  };})(bts[i]);
 })();
 </script>
 </body></html>`;
