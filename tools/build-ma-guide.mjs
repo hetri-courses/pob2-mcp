@@ -16,6 +16,7 @@ import { loadRawTree, renderTreeSvg, nodeCoords } from "../build/treeSvg.js";
 import { IconResolver } from "../build/icons.js";
 import { loadGems } from "../build/gemData.js";
 import { getSkillInfo } from "../build/skillData.js";
+import { gemAttribFloor } from "../build/attributes.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const forkPath = "D:\\pob2-mcp\\pob2-fork\\src";
@@ -165,6 +166,7 @@ const ALT_SKILLS = ["Staggering Palm", "Tempest Flurry", "Ice Strike", "Falling 
 // Every skill verified Staff/None/any-weapon (works unarmed via Hollow Palm).
 const LOADOUT = [
   { role: "Main Attack", skill: PRIMARY, from: 0, main: true },
+  { role: "AoE / Boss damage (place, then hit it)", skill: "Tempest Bell", from: 1, secondaryDamage: true },
   { role: "Movement", skill: "Gathering Storm", from: 0, supports: [] },
   { role: "Block / Defence", skill: "Parry", from: 0, supports: [] },
   { role: "Herald (persistent)", skill: "Herald of Ash", from: 1, supports: [] },
@@ -176,14 +178,57 @@ const primSupports = (maSupports.skills[PRIMARY] && maSupports.skills[PRIMARY].s
 const posSup = primSupports.filter((s) => s.delta > 0);
 const compatSup = primSupports.filter((s) => s.delta <= 0).slice(0, 10);
 const orderedSupports = [...posSup, ...compatSup]; // best-measured first
-const MAIN_SUP_BY_BRACKET = [1, 3, 4, 5]; // support sockets open as you level
+const MAIN_SUP_BY_BRACKET = [1, 3, 4, 5]; // main-skill support sockets open as you level
+const SEC_SUP_BY_BRACKET = [0, 1, 2, 3];  // secondary damage skills get fewer, later
 
-// Embed icons for every gem shown anywhere in the skills tab.
+// Measured supports for ANY skill at a level bracket: positive-delta only,
+// deduped by gem family (one per family), tier chosen for the bracket (low tier
+// early so you can actually slot it, high tier late), ordered by measured DPS.
+// Rough highest-attribute a Monk can reach by the END of each level bracket
+// (base + tree + gear, with Adaptive Capability letting the highest attribute
+// satisfy gem reqs). Used to gate supports: a 100-Str support is not slottable
+// at level 10 no matter how good — it needs the attributes you don't have yet.
+// Rough attributes a Dex/Int Monk reaches by the END of each level bracket.
+// Strength is OFF-attribute and stays low without heavy gear investment, so
+// 100-Str supports (Brutality, the lineage gems) are correctly gated out — a
+// Monk has no cheap way to satisfy them (Adaptive Capability is Gemling-only;
+// the tree's Reduced Attribute Requirements nodes only shave ~12%).
+const MONK_ATTR_CAP = {
+  str: [20, 35, 55, 80],
+  dex: [50, 85, 120, 175],
+  int: [45, 80, 115, 165],
+};
+function attrUsable(name, bracketIdx) {
+  const g = gemByName(name);
+  if (!g) return true;
+  return (g.reqStr || 0) <= (MONK_ATTR_CAP.str[bracketIdx] ?? 200)
+    && (g.reqDex || 0) <= (MONK_ATTR_CAP.dex[bracketIdx] ?? 200)
+    && (g.reqInt || 0) <= (MONK_ATTR_CAP.int[bracketIdx] ?? 200);
+}
+function pickSupports(skillName, bracketIdx, maxN) {
+  if (maxN <= 0) return [];
+  const all = ((maSupports.skills[skillName] && maSupports.skills[skillName].supports) || [])
+    .filter((s) => s.delta > 0 && attrUsable(s.name, bracketIdx));
+  if (!all.length) return [];
+  const byFamily = new Map();
+  for (const s of all) {
+    const fam = s.gemFamily || s.name;
+    const cur = byFamily.get(fam);
+    if (!cur) { byFamily.set(fam, s); continue; }
+    const preferHigh = bracketIdx >= 2; // later brackets take the stronger tier
+    const take = preferHigh ? (s.tier ?? 0) > (cur.tier ?? 0) : (s.tier ?? 0) < (cur.tier ?? 0);
+    if (take) byFamily.set(fam, s);
+  }
+  return [...byFamily.values()].sort((a, b) => b.delta - a.delta).slice(0, maxN);
+}
+const supN = (l, i) => (l.main ? MAIN_SUP_BY_BRACKET[i] : (l.secondaryDamage ? SEC_SUP_BY_BRACKET[i] : 0)) ?? 0;
+
+// Embed icons for every gem shown anywhere in the skills tab (all measured supports too).
 const gemIcons = new Map();
 const allGemNames = new Set([
   ...LOADOUT.map((l) => l.skill),
   ...LOADOUT.flatMap((l) => l.supports || []),
-  ...orderedSupports.map((s) => s.name),
+  ...Object.values(maSupports.skills || {}).flatMap((sk) => (sk.supports || []).map((s) => s.name)),
   ...ALT_SKILLS,
 ]);
 for (const n of allGemNames) gemIcons.set(n, await embedGemIcon(n));
@@ -223,9 +268,10 @@ const socket = (name, sub, pct, isMain) =>
 const groupCard = (l, bracketIdx) => {
   const info = skillInfoByName(l.skill);
   let supSockets = "";
-  if (l.main) {
-    const n = MAIN_SUP_BY_BRACKET[bracketIdx];
-    supSockets = orderedSupports.slice(0, n).map((s) => socket(s.name, null, s.delta > 0 ? s.pct : null, false)).join("");
+  const measured = pickSupports(l.skill, bracketIdx, supN(l, bracketIdx));
+  if (measured.length) {
+    // Measured, tier-appropriate supports for main + secondary damage skills.
+    supSockets = measured.map((s) => socket(s.name, s.tier ? `T${s.tier}` : null, s.pct, false)).join("");
   } else if ((l.supports || []).length) {
     supSockets = l.supports.map((s) => socket(s, null, null, false)).join("");
   }
@@ -279,6 +325,32 @@ const phaseLegend = PHASES.map((p) =>
   `<div class="pl"><span class="sw" style="background:${p.color}"></span><b>${p.range}</b><span>${p.note}</span></div>`
 ).join("") +
   `<div class="pl"><span class="sw" style="background:${ASC_COLOR}"></span><b>Ascendancy</b><span>Martial Artist nodes (separate subtree)</span></div>`;
+
+// ---- Attribute targets per level bracket -----------------------------------
+// Minimum Str/Dex/Int your equipped GEMS require at each phase (max across all
+// gems active by then). Computed from gem data, not guessed.
+const attrByPhase = SKILL_PHASES.map((_, i) => {
+  const gems = [];
+  for (const l of LOADOUT.filter((x) => x.from <= i)) {
+    gems.push(l.skill);
+    for (const s of pickSupports(l.skill, i, supN(l, i))) gems.push(s.name);
+    for (const s of (l.supports || [])) gems.push(s);
+  }
+  return gemAttribFloor(forkPath, gems);
+});
+const attrPlan = `<section><h2>Attributes — what to spec, by level</h2>
+<p class="note">Minimum attributes to <i>use</i> the gems you slot at each phase (from gem requirements). Assign generic <b>“+ to any Attribute”</b> passives to cover the gap. Your weapon adds a Dexterity requirement on top — see the gear tab.</p>
+<div class="attr-grid">
+<div class="attr-row attr-head"><b>Phase</b><span>Str</span><span>Dex</span><span>Int</span></div>
+${SKILL_PHASES.map((ph, i) => {
+  const a = attrByPhase[i];
+  return `<div class="attr-row"><b>${ph.label}</b>` +
+    `<span class="att${a.str >= 100 ? " hi" : ""}">${a.str}</span>` +
+    `<span class="att">${a.dex}</span><span class="att">${a.int}</span></div>`;
+}).join("")}
+</div>
+<p class="note">This build runs on <b>Dexterity + Intelligence</b> — your weapon and damage gems want Dex/Int, your two high attributes. The <b>Strength</b> in the table is driven by two buff skills — <b>Herald of Ash</b> and <b>Ancestral Cry</b> need ~100 Str. On a Dex/Int Monk you either gear some Strength to run them, or drop them for Dex/Int utility. Likewise <b>Brutality and the lineage supports each need ~100 Str</b> and a Monk has no cheap way to reach it (Adaptive Capability is a Mercenary-only node; the tree's <i>Reduced Attribute Requirements</i> nodes shave only ~12%) — so your real support picks are the <b>no-Strength</b> ones already shown above (Concentrated Area, Hit and Run, crit). Keep <b>Int</b> high (curses/heralds) and <b>Dex</b> for the weapon.</p>
+</section>`;
 
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -342,6 +414,13 @@ const html = `<!doctype html>
   .socket .so-sub{display:block;font-size:.68rem;color:var(--dim)}
   .socket .so-pct{display:block;color:var(--ok);font-weight:700;font-size:.72rem;margin-top:2px}
   .link-arrow{color:var(--dim);font-size:1.5rem;font-weight:300}
+  /* attribute plan */
+  .attr-grid{display:flex;flex-direction:column;gap:4px;max-width:520px;margin:.6rem 0}
+  .attr-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;align-items:center;gap:8px;padding:7px 12px;background:var(--bg-elev,#15151a);border:1px solid var(--line);border-radius:6px}
+  .attr-row.attr-head{background:transparent;border:none;color:var(--dim);font-size:.78rem;padding-bottom:0}
+  .attr-row b{color:var(--fg)}
+  .attr-row .att{text-align:center;font-variant-numeric:tabular-nums;color:var(--fg);font-weight:600}
+  .attr-row .att.hi{color:var(--acc)}
   .trick{border-left:2px solid var(--acc);padding:2px 0 2px 14px;margin:.4rem 0;max-width:820px}
   .trick code{color:var(--gold);font-size:.9em}
   /* tree */
@@ -427,7 +506,7 @@ ${skillsHtml}
 <div class="plegend">${phaseLegend}</div>
 <p class="note" style="margin-top:12px">Connected path from the Monk start, coloured by when you allocate it. Hover any node — glowing path nodes <i>and</i> nearby notables/keystones — to read the actual effect. The crit (orange) phase replaces the early Combo-filler smalls on respec.${unreachable.length ? ` <br>Couldn't route: ${unreachable.join(", ")}.` : ""}</p>
 </section>
-
+${attrPlan}
 </div>
 <div class="panel hidden" data-panel="gear">
 <section><h2>Defense</h2>

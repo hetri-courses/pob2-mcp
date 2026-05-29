@@ -35,7 +35,7 @@ if (!TREE_VERSION) {
 
 const ASCENDANCY = "Martial Artist";
 // Physical Quarterstaff strikes valid for the unarmed Hollow Palm build.
-const SKILLS = ["Killing Palm", "Staggering Palm"];
+const SKILLS = ["Killing Palm", "Staggering Palm", "Tempest Bell"];
 
 const gems = loadGems(forkPath);
 const b = new LuaBridge({ forkPath, timeoutMs: 180_000 });

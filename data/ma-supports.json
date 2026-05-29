@@ -1,15 +1,29 @@
 {
-  "generatedAt": "2026-05-29T17:28:11.766Z",
+  "generatedAt": "2026-05-29T18:59:08.383Z",
   "calcVersion": "0_5",
   "ascendancy": "Martial Artist",
   "skills": {
     "Killing Palm": {
-      "baseline": 1383.7195568724,
+      "baseline": 817.63462178565,
       "supports": [
         {
+          "name": "Uul-Netol's Embrace",
+          "delta": 689.472,
+          "pct": 88.49,
+          "tier": 0,
+          "gemFamily": "Breachlord",
+          "tags": [
+            "support",
+            "lineage",
+            "physical",
+            "chaos"
+          ],
+          "grantedEffectId": "SupportUulNetolsEmbracePlayer"
+        },
+        {
           "name": "Zerphi's Infamy",
-          "delta": 976.032,
-          "pct": 70.54,
+          "delta": 596.257,
+          "pct": 76.52,
           "tier": 0,
           "gemFamily": "Zerphi's Legacy",
           "tags": [
@@ -21,23 +35,9 @@
           "grantedEffectId": "SupportZerphisLegacyPlayer"
         },
         {
-          "name": "Uul-Netol's Embrace",
-          "delta": 849.4059,
-          "pct": 61.39,
-          "tier": 0,
-          "gemFamily": "Breachlord",
-          "tags": [
-            "support",
-            "lineage",
-            "physical",
-            "chaos"
-          ],
-          "grantedEffectId": "SupportUulNetolsEmbracePlayer"
-        },
-        {
           "name": "Brutality III",
-          "delta": 626.1843,
-          "pct": 45.25,
+          "delta": 457.6334,
+          "pct": 58.73,
           "tier": 5,
           "gemFamily": "Brutality",
           "tags": [
@@ -48,8 +48,8 @@
         },
         {
           "name": "Concentrated Area",
-          "delta": 577.4324,
-          "pct": 41.73,
+          "delta": 350.5677,
+          "pct": 44.99,
           "tier": 1,
           "gemFamily": "Concentrated Area",
           "tags": [
@@ -60,8 +60,8 @@
         },
         {
           "name": "Hit and Run",
-          "delta": 549.6968,
-          "pct": 39.73,
+          "delta": 311.6716,
+          "pct": 40,
           "tier": 4,
           "gemFamily": "Hit and Run",
           "tags": [
@@ -73,8 +73,8 @@
         },
         {
           "name": "Brutality II",
-          "delta": 439.0025,
-          "pct": 31.73,
+          "delta": 304.0284,
+          "pct": 39.02,
           "tier": 2,
           "gemFamily": "Brutality",
           "tags": [
@@ -85,8 +85,8 @@
         },
         {
           "name": "Heavy Swing",
-          "delta": 431.0676,
-          "pct": 31.15,
+          "delta": 281.0228,
+          "pct": 36.07,
           "tier": 4,
           "gemFamily": "Heavy Swing",
           "tags": [
@@ -98,325 +98,9 @@
           "grantedEffectId": "SupportMeleePhysicalDamagePlayer"
         },
         {
-          "name": "Brutality I",
-          "delta": 347.0445,
-          "pct": 25.08,
-          "tier": 1,
-          "gemFamily": "Brutality",
-          "tags": [
-            "support",
-            "physical"
-          ],
-          "grantedEffectId": "SupportBrutalityPlayer"
-        },
-        {
-          "name": "Heft",
-          "delta": 346.7548,
-          "pct": 25.06,
-          "tier": 5,
-          "gemFamily": "Heft",
-          "tags": [
-            "support",
-            "physical"
-          ],
-          "grantedEffectId": "SupportHeftPlayer"
-        },
-        {
           "name": "Ancestral Call II",
-          "delta": 345.1733,
-          "pct": 24.95,
-          "tier": 5,
-          "gemFamily": "Ancestral Call",
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportAncestralCallPlayerTwo"
-        },
-        {
-          "name": "Garukhan's Resolve",
-          "delta": 305.7701,
-          "pct": 22.1,
-          "tier": 0,
-          "gemFamily": "Garukhan's Resolve",
-          "tags": [
-            "support",
-            "lineage",
-            "attack"
-          ],
-          "grantedEffectId": "SupportGarukhansResolvePlayer"
-        },
-        {
-          "name": "Uhtred's Exodus",
-          "delta": 297.4336,
-          "pct": 21.5,
-          "tier": 0,
-          "gemFamily": "Uhtred of Kalguur",
-          "tags": [
-            "support",
-            "lineage"
-          ],
-          "grantedEffectId": "SupportUhtredExodusPlayer"
-        },
-        {
-          "name": "Inexorable Critical I",
-          "delta": 282.0706,
-          "pct": 20.38,
-          "tier": 3,
-          "gemFamily": "Inexorable Critical",
-          "tags": [
-            "support"
-          ],
-          "grantedEffectId": "SupportInevitableCriticalsPlayer"
-        },
-        {
-          "name": "Cold Attunement",
-          "delta": 238.6531,
-          "pct": 17.25,
-          "tier": 1,
-          "gemFamily": "Cold Attunement",
-          "tags": [
-            "support",
-            "attack",
-            "cold"
-          ],
-          "grantedEffectId": "SupportAddedColdDamagePlayer"
-        },
-        {
-          "name": "Lightning Attunement",
-          "delta": 238.6531,
-          "pct": 17.25,
-          "tier": 1,
-          "gemFamily": "Lightning Attunement",
-          "tags": [
-            "support",
-            "attack",
-            "lightning"
-          ],
-          "grantedEffectId": "SupportAddedLightningDamagePlayer"
-        },
-        {
-          "name": "Rapid Attacks II",
-          "delta": 236.9383,
-          "pct": 17.12,
-          "tier": 4,
-          "gemFamily": "Rapid Attacks",
-          "tags": [
-            "support",
-            "attack"
-          ],
-          "grantedEffectId": "SupportRapidAttacksPlayerTwo"
-        },
-        {
-          "name": "Rakiata's Flow",
-          "delta": 212.6283,
-          "pct": 15.37,
-          "tier": 0,
-          "gemFamily": "Rakiata's Flow",
-          "tags": [
-            "support",
-            "lineage"
-          ],
-          "grantedEffectId": "SupportRakiatasFlowPlayer"
-        },
-        {
-          "name": "Fire Attunement",
-          "delta": 212.0746,
-          "pct": 15.33,
-          "tier": 1,
-          "gemFamily": "Fire Attunement",
-          "tags": [
-            "support",
-            "attack",
-            "fire"
-          ],
-          "grantedEffectId": "SupportAddedFireDamagePlayer"
-        },
-        {
-          "name": "Ancestral Call I",
-          "delta": 205.7554,
-          "pct": 14.87,
-          "tier": 4,
-          "gemFamily": "Ancestral Call",
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportAncestralCallPlayer"
-        },
-        {
-          "name": "Rage III",
-          "delta": 142.163,
-          "pct": 10.27,
-          "tier": 5,
-          "gemFamily": "Rage",
-          "tags": [
-            "support",
-            "attack",
-            "melee"
-          ],
-          "grantedEffectId": "SupportRagePlayerThree"
-        },
-        {
-          "name": "Rapid Attacks I",
-          "delta": 142.163,
-          "pct": 10.27,
-          "tier": 1,
-          "gemFamily": "Rapid Attacks",
-          "tags": [
-            "support",
-            "attack"
-          ],
-          "grantedEffectId": "SupportRapidAttacksPlayer"
-        },
-        {
-          "name": "Overextend",
-          "delta": 107.9347,
-          "pct": 7.8,
-          "tier": 2,
-          "gemFamily": "Overextend",
-          "tags": [
-            "support",
-            "attack"
-          ],
-          "grantedEffectId": "SupportOverextendPlayer"
-        },
-        {
-          "name": "Supercritical",
-          "delta": 102.5135,
-          "pct": 7.41,
-          "tier": 3,
-          "gemFamily": "Supercritical",
-          "tags": [
-            "support"
-          ],
-          "grantedEffectId": "SupportIncreasedCriticalDamagePlayer"
-        },
-        {
-          "name": "Inexorable Critical II",
-          "delta": 96.388,
-          "pct": 6.97,
-          "tier": 4,
-          "gemFamily": "Inexorable Critical",
-          "tags": [
-            "support"
-          ],
-          "grantedEffectId": "SupportInevitableCriticalsPlayerTwo"
-        },
-        {
-          "name": "Physical Mastery",
-          "delta": 94.4958,
-          "pct": 6.83,
-          "tier": 5,
-          "gemFamily": "Mastery",
-          "tags": [
-            "support",
-            "physical"
-          ],
-          "grantedEffectId": "SupportPhysicalMasteryPlayer"
-        }
-      ]
-    },
-    "Staggering Palm": {
-      "baseline": 1180.5798566718,
-      "supports": [
-        {
-          "name": "Uul-Netol's Embrace",
-          "delta": 755.2735,
-          "pct": 63.97,
-          "tier": 0,
-          "gemFamily": "Breachlord",
-          "tags": [
-            "support",
-            "lineage",
-            "physical",
-            "chaos"
-          ],
-          "grantedEffectId": "SupportUulNetolsEmbracePlayer"
-        },
-        {
-          "name": "Brutality III",
-          "delta": 558.9085,
-          "pct": 47.34,
-          "tier": 5,
-          "gemFamily": "Brutality",
-          "tags": [
-            "support",
-            "physical"
-          ],
-          "grantedEffectId": "SupportBrutalityPlayerThree"
-        },
-        {
-          "name": "Concentrated Area",
-          "delta": 501.5239,
-          "pct": 42.48,
-          "tier": 1,
-          "gemFamily": "Concentrated Area",
-          "tags": [
-            "support",
-            "area"
-          ],
-          "grantedEffectId": "SupportConcentratedAreaPlayer"
-        },
-        {
-          "name": "Hit and Run",
-          "delta": 468.9975,
-          "pct": 39.73,
-          "tier": 4,
-          "gemFamily": "Hit and Run",
-          "tags": [
-            "support",
-            "attack",
-            "conditional"
-          ],
-          "grantedEffectId": "SupportHitAndRunPlayer"
-        },
-        {
-          "name": "Brutality II",
-          "delta": 379.7055,
-          "pct": 32.16,
-          "tier": 2,
-          "gemFamily": "Brutality",
-          "tags": [
-            "support",
-            "physical"
-          ],
-          "grantedEffectId": "SupportBrutalityPlayerTwo"
-        },
-        {
-          "name": "Heavy Swing",
-          "delta": 377.4879,
-          "pct": 31.97,
-          "tier": 4,
-          "gemFamily": "Heavy Swing",
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "physical"
-          ],
-          "grantedEffectId": "SupportMeleePhysicalDamagePlayer"
-        },
-        {
-          "name": "Heft",
-          "delta": 300.436,
-          "pct": 25.45,
-          "tier": 5,
-          "gemFamily": "Heft",
-          "tags": [
-            "support",
-            "physical"
-          ],
-          "grantedEffectId": "SupportHeftPlayer"
-        },
-        {
-          "name": "Ancestral Call II",
-          "delta": 299.8851,
-          "pct": 25.4,
+          "delta": 255.0941,
+          "pct": 32.74,
           "tier": 5,
           "gemFamily": "Ancestral Call",
           "tags": [
@@ -429,8 +113,8 @@
         },
         {
           "name": "Brutality I",
-          "delta": 299.2186,
-          "pct": 25.35,
+          "delta": 245.5525,
+          "pct": 31.51,
           "tier": 1,
           "gemFamily": "Brutality",
           "tags": [
@@ -440,22 +124,21 @@
           "grantedEffectId": "SupportBrutalityPlayer"
         },
         {
-          "name": "Garukhan's Resolve",
-          "delta": 267.198,
-          "pct": 22.63,
-          "tier": 0,
-          "gemFamily": "Garukhan's Resolve",
+          "name": "Heft",
+          "delta": 215.1153,
+          "pct": 27.61,
+          "tier": 5,
+          "gemFamily": "Heft",
           "tags": [
             "support",
-            "lineage",
-            "attack"
+            "physical"
           ],
-          "grantedEffectId": "SupportGarukhansResolvePlayer"
+          "grantedEffectId": "SupportHeftPlayer"
         },
         {
           "name": "Uhtred's Exodus",
-          "delta": 257.1301,
-          "pct": 21.78,
+          "delta": 179.5869,
+          "pct": 23.05,
           "tier": 0,
           "gemFamily": "Uhtred of Kalguur",
           "tags": [
@@ -465,20 +148,9 @@
           "grantedEffectId": "SupportUhtredExodusPlayer"
         },
         {
-          "name": "Inexorable Critical I",
-          "delta": 246.4381,
-          "pct": 20.87,
-          "tier": 3,
-          "gemFamily": "Inexorable Critical",
-          "tags": [
-            "support"
-          ],
-          "grantedEffectId": "SupportInevitableCriticalsPlayer"
-        },
-        {
           "name": "Cold Attunement",
-          "delta": 212.0746,
-          "pct": 17.96,
+          "delta": 177.97,
+          "pct": 22.84,
           "tier": 1,
           "gemFamily": "Cold Attunement",
           "tags": [
@@ -489,22 +161,9 @@
           "grantedEffectId": "SupportAddedColdDamagePlayer"
         },
         {
-          "name": "Lightning Attunement",
-          "delta": 212.0746,
-          "pct": 17.96,
-          "tier": 1,
-          "gemFamily": "Lightning Attunement",
-          "tags": [
-            "support",
-            "attack",
-            "lightning"
-          ],
-          "grantedEffectId": "SupportAddedLightningDamagePlayer"
-        },
-        {
           "name": "Rapid Attacks II",
-          "delta": 202.1541,
-          "pct": 17.12,
+          "delta": 162.329,
+          "pct": 20.83,
           "tier": 4,
           "gemFamily": "Rapid Attacks",
           "tags": [
@@ -515,8 +174,8 @@
         },
         {
           "name": "Fire Attunement",
-          "delta": 188.8184,
-          "pct": 15.99,
+          "delta": 160.3022,
+          "pct": 20.57,
           "tier": 1,
           "gemFamily": "Fire Attunement",
           "tags": [
@@ -527,21 +186,22 @@
           "grantedEffectId": "SupportAddedFireDamagePlayer"
         },
         {
-          "name": "Rakiata's Flow",
-          "delta": 188.2647,
-          "pct": 15.95,
-          "tier": 0,
-          "gemFamily": "Rakiata's Flow",
+          "name": "Lightning Attunement",
+          "delta": 160.3022,
+          "pct": 20.57,
+          "tier": 1,
+          "gemFamily": "Lightning Attunement",
           "tags": [
             "support",
-            "lineage"
+            "attack",
+            "lightning"
           ],
-          "grantedEffectId": "SupportRakiatasFlowPlayer"
+          "grantedEffectId": "SupportAddedLightningDamagePlayer"
         },
         {
           "name": "Ancestral Call I",
-          "delta": 178.6239,
-          "pct": 15.13,
+          "delta": 151.4167,
+          "pct": 19.43,
           "tier": 4,
           "gemFamily": "Ancestral Call",
           "tags": [
@@ -553,9 +213,33 @@
           "grantedEffectId": "SupportAncestralCallPlayer"
         },
         {
+          "name": "Inexorable Critical I",
+          "delta": 150.7098,
+          "pct": 19.34,
+          "tier": 3,
+          "gemFamily": "Inexorable Critical",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportInevitableCriticalsPlayer"
+        },
+        {
+          "name": "Garukhan's Resolve",
+          "delta": 137.8401,
+          "pct": 17.69,
+          "tier": 0,
+          "gemFamily": "Garukhan's Resolve",
+          "tags": [
+            "support",
+            "lineage",
+            "attack"
+          ],
+          "grantedEffectId": "SupportGarukhansResolvePlayer"
+        },
+        {
           "name": "Rage III",
-          "delta": 121.2925,
-          "pct": 10.27,
+          "delta": 97.3974,
+          "pct": 12.5,
           "tier": 5,
           "gemFamily": "Rage",
           "tags": [
@@ -567,8 +251,8 @@
         },
         {
           "name": "Rapid Attacks I",
-          "delta": 121.2925,
-          "pct": 10.27,
+          "delta": 97.3974,
+          "pct": 12.5,
           "tier": 1,
           "gemFamily": "Rapid Attacks",
           "tags": [
@@ -578,21 +262,21 @@
           "grantedEffectId": "SupportRapidAttacksPlayer"
         },
         {
-          "name": "Overextend",
-          "delta": 95.1536,
-          "pct": 8.06,
-          "tier": 2,
-          "gemFamily": "Overextend",
+          "name": "Rakiata's Flow",
+          "delta": 71.5327,
+          "pct": 9.18,
+          "tier": 0,
+          "gemFamily": "Rakiata's Flow",
           "tags": [
             "support",
-            "attack"
+            "lineage"
           ],
-          "grantedEffectId": "SupportOverextendPlayer"
+          "grantedEffectId": "SupportRakiatasFlowPlayer"
         },
         {
           "name": "Supercritical",
-          "delta": 91.0528,
-          "pct": 7.71,
+          "delta": 64.689,
+          "pct": 8.3,
           "tier": 3,
           "gemFamily": "Supercritical",
           "tags": [
@@ -602,8 +286,8 @@
         },
         {
           "name": "Inexorable Critical II",
-          "delta": 82.221,
-          "pct": 6.96,
+          "delta": 64.624,
+          "pct": 8.29,
           "tier": 4,
           "gemFamily": "Inexorable Critical",
           "tags": [
@@ -613,8 +297,8 @@
         },
         {
           "name": "Physical Mastery",
-          "delta": 77.452,
-          "pct": 6.56,
+          "delta": 56.1433,
+          "pct": 7.21,
           "tier": 5,
           "gemFamily": "Mastery",
           "tags": [
@@ -625,8 +309,8 @@
         },
         {
           "name": "Dialla's Desire",
-          "delta": 77.452,
-          "pct": 6.56,
+          "delta": 56.1433,
+          "pct": 7.21,
           "tier": 0,
           "gemFamily": "Dialla's Desire",
           "tags": [
@@ -634,6 +318,631 @@
             "lineage"
           ],
           "grantedEffectId": "SupportDiallasDesirePlayer"
+        }
+      ]
+    },
+    "Staggering Palm": {
+      "baseline": 772.87057267721,
+      "supports": [
+        {
+          "name": "Uul-Netol's Embrace",
+          "delta": 684.2579,
+          "pct": 93.16,
+          "tier": 0,
+          "gemFamily": "Breachlord",
+          "tags": [
+            "support",
+            "lineage",
+            "physical",
+            "chaos"
+          ],
+          "grantedEffectId": "SupportUulNetolsEmbracePlayer"
+        },
+        {
+          "name": "Brutality III",
+          "delta": 454.0728,
+          "pct": 61.82,
+          "tier": 5,
+          "gemFamily": "Brutality",
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayerThree"
+        },
+        {
+          "name": "Concentrated Area",
+          "delta": 336.9042,
+          "pct": 45.87,
+          "tier": 1,
+          "gemFamily": "Concentrated Area",
+          "tags": [
+            "support",
+            "area"
+          ],
+          "grantedEffectId": "SupportConcentratedAreaPlayer"
+        },
+        {
+          "name": "Hit and Run",
+          "delta": 295.9865,
+          "pct": 40.3,
+          "tier": 4,
+          "gemFamily": "Hit and Run",
+          "tags": [
+            "support",
+            "attack",
+            "conditional"
+          ],
+          "grantedEffectId": "SupportHitAndRunPlayer"
+        },
+        {
+          "name": "Brutality II",
+          "delta": 291.1907,
+          "pct": 39.65,
+          "tier": 2,
+          "gemFamily": "Brutality",
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayerTwo"
+        },
+        {
+          "name": "Heavy Swing",
+          "delta": 274.9358,
+          "pct": 37.43,
+          "tier": 4,
+          "gemFamily": "Heavy Swing",
+          "tags": [
+            "support",
+            "attack",
+            "melee",
+            "physical"
+          ],
+          "grantedEffectId": "SupportMeleePhysicalDamagePlayer"
+        },
+        {
+          "name": "Brutality I",
+          "delta": 235.476,
+          "pct": 32.06,
+          "tier": 1,
+          "gemFamily": "Brutality",
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayer"
+        },
+        {
+          "name": "Ancestral Call II",
+          "delta": 218.998,
+          "pct": 29.82,
+          "tier": 5,
+          "gemFamily": "Ancestral Call",
+          "tags": [
+            "support",
+            "attack",
+            "melee",
+            "strike"
+          ],
+          "grantedEffectId": "SupportAncestralCallPlayerTwo"
+        },
+        {
+          "name": "Heft",
+          "delta": 206.5079,
+          "pct": 28.12,
+          "tier": 5,
+          "gemFamily": "Heft",
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportHeftPlayer"
+        },
+        {
+          "name": "Cold Attunement",
+          "delta": 177.0794,
+          "pct": 24.11,
+          "tier": 1,
+          "gemFamily": "Cold Attunement",
+          "tags": [
+            "support",
+            "attack",
+            "cold"
+          ],
+          "grantedEffectId": "SupportAddedColdDamagePlayer"
+        },
+        {
+          "name": "Uhtred's Exodus",
+          "delta": 171.5443,
+          "pct": 23.36,
+          "tier": 0,
+          "gemFamily": "Uhtred of Kalguur",
+          "tags": [
+            "support",
+            "lineage"
+          ],
+          "grantedEffectId": "SupportUhtredExodusPlayer"
+        },
+        {
+          "name": "Fire Attunement",
+          "delta": 159.7564,
+          "pct": 21.75,
+          "tier": 1,
+          "gemFamily": "Fire Attunement",
+          "tags": [
+            "support",
+            "attack",
+            "fire"
+          ],
+          "grantedEffectId": "SupportAddedFireDamagePlayer"
+        },
+        {
+          "name": "Lightning Attunement",
+          "delta": 159.7564,
+          "pct": 21.75,
+          "tier": 1,
+          "gemFamily": "Lightning Attunement",
+          "tags": [
+            "support",
+            "attack",
+            "lightning"
+          ],
+          "grantedEffectId": "SupportAddedLightningDamagePlayer"
+        },
+        {
+          "name": "Inexorable Critical I",
+          "delta": 145.794,
+          "pct": 19.85,
+          "tier": 3,
+          "gemFamily": "Inexorable Critical",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportInevitableCriticalsPlayer"
+        },
+        {
+          "name": "Rapid Attacks II",
+          "delta": 137.0308,
+          "pct": 18.66,
+          "tier": 4,
+          "gemFamily": "Rapid Attacks",
+          "tags": [
+            "support",
+            "attack"
+          ],
+          "grantedEffectId": "SupportRapidAttacksPlayerTwo"
+        },
+        {
+          "name": "Garukhan's Resolve",
+          "delta": 133.3636,
+          "pct": 18.16,
+          "tier": 0,
+          "gemFamily": "Garukhan's Resolve",
+          "tags": [
+            "support",
+            "lineage",
+            "attack"
+          ],
+          "grantedEffectId": "SupportGarukhansResolvePlayer"
+        },
+        {
+          "name": "Ancestral Call I",
+          "delta": 129.9833,
+          "pct": 17.7,
+          "tier": 4,
+          "gemFamily": "Ancestral Call",
+          "tags": [
+            "support",
+            "attack",
+            "melee",
+            "strike"
+          ],
+          "grantedEffectId": "SupportAncestralCallPlayer"
+        },
+        {
+          "name": "Rage III",
+          "delta": 82.2185,
+          "pct": 11.19,
+          "tier": 5,
+          "gemFamily": "Rage",
+          "tags": [
+            "support",
+            "attack",
+            "melee"
+          ],
+          "grantedEffectId": "SupportRagePlayerThree"
+        },
+        {
+          "name": "Rapid Attacks I",
+          "delta": 82.2185,
+          "pct": 11.19,
+          "tier": 1,
+          "gemFamily": "Rapid Attacks",
+          "tags": [
+            "support",
+            "attack"
+          ],
+          "grantedEffectId": "SupportRapidAttacksPlayer"
+        },
+        {
+          "name": "Rakiata's Flow",
+          "delta": 70.2543,
+          "pct": 9.57,
+          "tier": 0,
+          "gemFamily": "Rakiata's Flow",
+          "tags": [
+            "support",
+            "lineage"
+          ],
+          "grantedEffectId": "SupportRakiatasFlowPlayer"
+        },
+        {
+          "name": "Supercritical",
+          "delta": 63.7499,
+          "pct": 8.68,
+          "tier": 3,
+          "gemFamily": "Supercritical",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportIncreasedCriticalDamagePlayer"
+        },
+        {
+          "name": "Inexorable Critical II",
+          "delta": 61.2793,
+          "pct": 8.34,
+          "tier": 4,
+          "gemFamily": "Inexorable Critical",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportInevitableCriticalsPlayerTwo"
+        },
+        {
+          "name": "Physical Mastery",
+          "delta": 51.9251,
+          "pct": 7.07,
+          "tier": 5,
+          "gemFamily": "Mastery",
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportPhysicalMasteryPlayer"
+        },
+        {
+          "name": "Dialla's Desire",
+          "delta": 51.9251,
+          "pct": 7.07,
+          "tier": 0,
+          "gemFamily": "Dialla's Desire",
+          "tags": [
+            "support",
+            "lineage"
+          ],
+          "grantedEffectId": "SupportDiallasDesirePlayer"
+        },
+        {
+          "name": "Overextend",
+          "delta": 48.1071,
+          "pct": 6.55,
+          "tier": 2,
+          "gemFamily": "Overextend",
+          "tags": [
+            "support",
+            "attack"
+          ],
+          "grantedEffectId": "SupportOverextendPlayer"
+        }
+      ]
+    },
+    "Tempest Bell": {
+      "baseline": 242.81657888537,
+      "supports": [
+        {
+          "name": "Uul-Netol's Embrace",
+          "delta": 351.6234,
+          "pct": 153.73,
+          "tier": 0,
+          "gemFamily": "Breachlord",
+          "tags": [
+            "support",
+            "lineage",
+            "physical",
+            "chaos"
+          ],
+          "grantedEffectId": "SupportUulNetolsEmbracePlayer"
+        },
+        {
+          "name": "Brutality III",
+          "delta": 216.9752,
+          "pct": 94.86,
+          "tier": 5,
+          "gemFamily": "Brutality",
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayerThree"
+        },
+        {
+          "name": "Zerphi's Infamy",
+          "delta": 206.2461,
+          "pct": 90.17,
+          "tier": 0,
+          "gemFamily": "Zerphi's Legacy",
+          "tags": [
+            "support",
+            "lineage",
+            "warcry",
+            "area"
+          ],
+          "grantedEffectId": "SupportZerphisLegacyPlayer"
+        },
+        {
+          "name": "Heavy Swing",
+          "delta": 132.1433,
+          "pct": 57.77,
+          "tier": 4,
+          "gemFamily": "Heavy Swing",
+          "tags": [
+            "support",
+            "attack",
+            "melee",
+            "physical"
+          ],
+          "grantedEffectId": "SupportMeleePhysicalDamagePlayer"
+        },
+        {
+          "name": "Concentrated Area",
+          "delta": 116.8119,
+          "pct": 51.07,
+          "tier": 1,
+          "gemFamily": "Concentrated Area",
+          "tags": [
+            "support",
+            "area"
+          ],
+          "grantedEffectId": "SupportConcentratedAreaPlayer"
+        },
+        {
+          "name": "Chaos Attunement",
+          "delta": 94.181,
+          "pct": 41.17,
+          "tier": 3,
+          "gemFamily": "Chaos Attunement",
+          "tags": [
+            "support",
+            "attack",
+            "chaos"
+          ],
+          "grantedEffectId": "SupportAddedChaosDamagePlayer"
+        },
+        {
+          "name": "Brutality II",
+          "delta": 92.7534,
+          "pct": 40.55,
+          "tier": 2,
+          "gemFamily": "Brutality",
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayerTwo"
+        },
+        {
+          "name": "Cold Attunement",
+          "delta": 90.0649,
+          "pct": 39.38,
+          "tier": 1,
+          "gemFamily": "Cold Attunement",
+          "tags": [
+            "support",
+            "attack",
+            "cold"
+          ],
+          "grantedEffectId": "SupportAddedColdDamagePlayer"
+        },
+        {
+          "name": "Fire Attunement",
+          "delta": 82.0455,
+          "pct": 35.87,
+          "tier": 1,
+          "gemFamily": "Fire Attunement",
+          "tags": [
+            "support",
+            "attack",
+            "fire"
+          ],
+          "grantedEffectId": "SupportAddedFireDamagePlayer"
+        },
+        {
+          "name": "Lightning Attunement",
+          "delta": 82.0455,
+          "pct": 35.87,
+          "tier": 1,
+          "gemFamily": "Lightning Attunement",
+          "tags": [
+            "support",
+            "attack",
+            "lightning"
+          ],
+          "grantedEffectId": "SupportAddedLightningDamagePlayer"
+        },
+        {
+          "name": "Brutality I",
+          "delta": 72.9584,
+          "pct": 31.9,
+          "tier": 1,
+          "gemFamily": "Brutality",
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayer"
+        },
+        {
+          "name": "Heft",
+          "delta": 68.7687,
+          "pct": 30.06,
+          "tier": 5,
+          "gemFamily": "Heft",
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportHeftPlayer"
+        },
+        {
+          "name": "Inexorable Critical I",
+          "delta": 53.4105,
+          "pct": 23.35,
+          "tier": 3,
+          "gemFamily": "Inexorable Critical",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportInevitableCriticalsPlayer"
+        },
+        {
+          "name": "Rakiata's Flow",
+          "delta": 37.013,
+          "pct": 16.18,
+          "tier": 0,
+          "gemFamily": "Rakiata's Flow",
+          "tags": [
+            "support",
+            "lineage"
+          ],
+          "grantedEffectId": "SupportRakiatasFlowPlayer"
+        },
+        {
+          "name": "Supercritical",
+          "delta": 27.9809,
+          "pct": 12.23,
+          "tier": 3,
+          "gemFamily": "Supercritical",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportIncreasedCriticalDamagePlayer"
+        },
+        {
+          "name": "Atziri's Impatience",
+          "delta": 26.9154,
+          "pct": 11.77,
+          "tier": 0,
+          "gemFamily": "Cooldown Recovery",
+          "tags": [
+            "support",
+            "lineage"
+          ],
+          "grantedEffectId": "SupportAtzirisImpatiencePlayer"
+        },
+        {
+          "name": "Cooldown Recovery I",
+          "delta": 26.9154,
+          "pct": 11.77,
+          "tier": 3,
+          "gemFamily": "Cooldown Recovery",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportCooldownRecoveryPlayer"
+        },
+        {
+          "name": "Cooldown Recovery II",
+          "delta": 26.9154,
+          "pct": 11.77,
+          "tier": 4,
+          "gemFamily": "Cooldown Recovery",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportCooldownRecoveryPlayerTwo"
+        },
+        {
+          "name": "Atalui's Bloodletting",
+          "delta": 26.3835,
+          "pct": 11.53,
+          "tier": 0,
+          "gemFamily": "Lifetap",
+          "tags": [
+            "support",
+            "lineage",
+            "physical"
+          ],
+          "grantedEffectId": "SupportAtaluiBloodlettingPlayer"
+        },
+        {
+          "name": "Overextend",
+          "delta": 19.5975,
+          "pct": 8.57,
+          "tier": 2,
+          "gemFamily": "Overextend",
+          "tags": [
+            "support",
+            "attack"
+          ],
+          "grantedEffectId": "SupportOverextendPlayer"
+        },
+        {
+          "name": "Inexorable Critical II",
+          "delta": 18.0101,
+          "pct": 7.87,
+          "tier": 4,
+          "gemFamily": "Inexorable Critical",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportInevitableCriticalsPlayerTwo"
+        },
+        {
+          "name": "Overabundance I",
+          "delta": 14.3188,
+          "pct": 6.26,
+          "tier": 1,
+          "gemFamily": "Overabundance",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportIncreaseLimitPlayer"
+        },
+        {
+          "name": "Overabundance II",
+          "delta": 14.3188,
+          "pct": 6.26,
+          "tier": 4,
+          "gemFamily": "Overabundance",
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportIncreaseLimitPlayerTwo"
+        },
+        {
+          "name": "Cold Penetration",
+          "delta": 11.1039,
+          "pct": 4.85,
+          "tier": 2,
+          "gemFamily": "Cold Penetration",
+          "tags": [
+            "support",
+            "cold"
+          ],
+          "grantedEffectId": "SupportColdPenetrationPlayer"
+        },
+        {
+          "name": "Elemental Armament II",
+          "delta": 4.9351,
+          "pct": 2.16,
+          "tier": 2,
+          "gemFamily": "Elemental Armament",
+          "tags": [
+            "support",
+            "attack"
+          ],
+          "grantedEffectId": "SupportElementalArmamentPlayerTwo"
         }
       ]
     }
