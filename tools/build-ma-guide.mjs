@@ -11,7 +11,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadTree, findPathToNode } from "../build/treeData.js";
-import { loadRawTree, renderTreeSvg } from "../build/treeSvg.js";
+import { loadRawTree, renderTreeSvg, nodeCoords } from "../build/treeSvg.js";
 import { IconResolver } from "../build/icons.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -41,30 +41,55 @@ const PHASES = [
 
 const allocated = new Set([MONK_START]);
 const nodeColors = new Map();
+const nodePhases = new Map(); // id -> phase number (1..4)
+nodePhases.set(MONK_START, 1);
 const reachedLandmarks = []; // {name, range, color}
 let unreachable = [];
 
-for (const ph of PHASES) {
+PHASES.forEach((ph, i) => {
+  const phaseNum = i + 1;
   for (const tName of ph.targets) {
     const tn = byName(tName);
     if (!tn) { unreachable.push(tName + " (no node)"); continue; }
     const r = findPathToNode(forkPath, [...allocated], tn.id, { version: VERSION, maxHops: 90 });
     if (!r) { unreachable.push(tName + " (unreachable)"); continue; }
     for (const node of r.path) {
-      if (!allocated.has(node.id)) { allocated.add(node.id); nodeColors.set(node.id, ph.color); }
+      if (!allocated.has(node.id)) {
+        allocated.add(node.id);
+        nodeColors.set(node.id, ph.color);
+        nodePhases.set(node.id, phaseNum);
+      }
     }
     reachedLandmarks.push({ name: tName, range: ph.range, color: ph.color, type: tn.type });
   }
-}
+});
 // Frame on the main-tree path (exclude ascendancy, which we add next)
 const frameNodeIds = new Set(allocated);
 
-// Martial Artist ascendancy landmarks (separate subgraph; distinct colour)
+// Martial Artist ascendancy landmarks (separate subgraph; distinct colour).
+// Shown from phase 2 onward (ascendancy points come during the campaign).
 const ASC_COLOR = "#c08bf0";
 const ascNames = ["Way of the Stonefist", "Martial Master", "Martial Adept", "Way of the Mountain"];
 for (const n of tree.all.filter((x) => x.ascendancyName === "Martial Artist")) {
-  if (ascNames.includes(n.name)) { allocated.add(n.id); nodeColors.set(n.id, ASC_COLOR); }
+  if (ascNames.includes(n.name)) { allocated.add(n.id); nodeColors.set(n.id, ASC_COLOR); nodePhases.set(n.id, 2); }
 }
+
+// Cumulative per-phase view boxes (main-tree path nodes only; ascendancy is
+// off-corner and excluded so the camera frames the relevant cluster).
+const PHASE_VIEWS = PHASES.map((_, i) => {
+  const upto = i + 1;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const id of frameNodeIds) {
+    if ((nodePhases.get(id) ?? 99) > upto) continue;
+    const xy = nodeCoords(raw, raw.nodes[id]);
+    if (!xy) continue;
+    if (xy.x < minX) minX = xy.x; if (xy.x > maxX) maxX = xy.x;
+    if (xy.y < minY) minY = xy.y; if (xy.y > maxY) maxY = xy.y;
+  }
+  if (minX === Infinity) return null;
+  const pad = 1100;
+  return { x: Math.round(minX - pad), y: Math.round(minY - pad), w: Math.round(maxX - minX + 2 * pad), h: Math.round(maxY - minY + 2 * pad) };
+});
 
 // ---- Tooltip data: every allocated node + every notable/keystone in view ----
 const tooltipIds = new Set(allocated);
@@ -124,6 +149,7 @@ const svg = renderTreeSvg(raw, {
   nodeColors,
   tooltipIds,
   nodeIcons,
+  nodePhases,
   colors: { edgeAlloc: "#cdbb88" },
 });
 
@@ -172,6 +198,7 @@ const html = `<!doctype html>
   .ctrls button{background:#1b1b22;color:var(--fg);border:1px solid var(--line);border-radius:6px;width:34px;height:34px;font-size:1rem;cursor:pointer;line-height:1}
   .ctrls button.wide{width:auto;padding:0 10px;font-size:.8rem}
   .ctrls button:hover{border-color:var(--acc);color:var(--gold)}
+  .ctrls button.active{border-color:var(--acc);color:var(--gold);background:#2a1d10}
   .hint{position:absolute;left:12px;bottom:10px;color:var(--dim);font-size:.78rem;z-index:2;pointer-events:none}
   #tip{position:fixed;z-index:10;max-width:320px;background:#15151b;border:1px solid #3a3a44;border-radius:7px;
     padding:9px 11px;font-size:.86rem;pointer-events:none;opacity:0;transition:opacity .08s;box-shadow:0 6px 24px rgba(0,0,0,.5)}
@@ -230,11 +257,10 @@ ${skillRows.map(([a, b, c]) => `<tr><td>${a}</td><td>${b}</td><td>${c}</td></tr>
   <div class="ctrls">
     <button id="zin" title="Zoom in">+</button>
     <button id="zout" title="Zoom out">−</button>
-    <button id="zfit" class="wide" title="Frame the build">Build</button>
-    <button id="zall" class="wide" title="Show whole tree">All</button>
+    ${PHASES.map((p, i) => `<button id="ph${i + 1}" class="wide ph" title="${p.note}">${p.range.replace("Lvl ", "")}</button>`).join("")}
   </div>
   ${svg}
-  <div class="hint">scroll = zoom · drag = pan · hover a node for its full effect</div>
+  <div class="hint">click a level bracket to grow the tree · scroll = zoom · drag = pan · hover a node for its effect</div>
 </div>
 <div class="plegend">${phaseLegend}</div>
 <p class="note" style="margin-top:12px">Connected path from the Monk start, coloured by when you allocate it. Hover any node — glowing path nodes <i>and</i> nearby notables/keystones — to read the actual effect. The crit (orange) phase replaces the early Combo-filler smalls on respec.${unreachable.length ? ` <br>Couldn't route: ${unreachable.join(", ")}.` : ""}</p>
@@ -278,8 +304,16 @@ var TIP=${JSON.stringify(tipData)};
   function z(f){var a=vb();var cx=a[0]+a[2]/2,cy=a[1]+a[3]/2;a[2]*=f;a[3]*=f;a[0]=cx-a[2]/2;a[1]=cy-a[3]/2;set(a);}
   document.getElementById('zin').onclick=function(){z(0.8);};
   document.getElementById('zout').onclick=function(){z(1.25);};
-  document.getElementById('zfit').onclick=function(){set(init.slice());};
-  document.getElementById('zall').onclick=function(){set(full.slice());};
+  // Phase stepping: show the tree cumulatively up to the chosen level bracket.
+  var PHASE_VIEWS=${JSON.stringify(PHASE_VIEWS)};
+  var phased=svg.querySelectorAll('[data-phase]');
+  function showPhase(p){
+    for(var i=0;i<phased.length;i++){var el=phased[i];el.style.display=(+el.getAttribute('data-phase')<=p)?'':'none';}
+    var v=PHASE_VIEWS[p-1]; if(v) set([v.x,v.y,v.w,v.h]); else set(init.slice());
+    for(var k=1;k<=${PHASES.length};k++){var b=document.getElementById('ph'+k); if(b) b.className='wide ph'+(k===p?' active':'');}
+  }
+  for(var k=1;k<=${PHASES.length};k++){(function(p){var b=document.getElementById('ph'+p); if(b) b.onclick=function(){showPhase(p);};})(k);}
+  showPhase(${PHASES.length}); // default: full build
   // rich tooltip
   var tip=document.getElementById('tip');
   svg.addEventListener('mouseover',function(e){

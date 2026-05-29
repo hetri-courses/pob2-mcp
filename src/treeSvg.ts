@@ -142,6 +142,13 @@ export interface RenderTreeSvgOptions {
    * Nodes without an entry fall back to the flat colour fill.
    */
   nodeIcons?: Map<number, string>;
+  /**
+   * Per-node phase index (e.g. 1..N level brackets). When set, allocated
+   * nodes get `data-phase` and allocated edges are split into one <path> per
+   * phase (edge phase = max of its endpoints), so host JS can show the tree
+   * cumulatively per phase. Edge phase paths also carry `data-phase`.
+   */
+  nodePhases?: Map<number, number>;
   /** Optional CSS-color overrides. */
   colors?: {
     background?: string;
@@ -341,16 +348,28 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
   // Edges first (so nodes overlay them).
   // Two combined <path>s (one per state) collapse ~2-3KB of element framing
   // overhead per 100 edges → ~150KB savings on the full tree.
+  const nodePhases = options.nodePhases;
   const edgePathNormal: string[] = [];
   const edgePathAlloc: string[] = [];
+  const edgeByPhase = new Map<number, string[]>(); // phase -> alloc edge segs
   for (const e of edges) {
     const a = includedCoords.get(e.a)!;
     const b = includedCoords.get(e.b)!;
     const seg = `M${Math.round(a.x)} ${Math.round(a.y)}L${Math.round(b.x)} ${Math.round(b.y)}`;
-    (e.alloc ? edgePathAlloc : edgePathNormal).push(seg);
+    if (!e.alloc) { edgePathNormal.push(seg); continue; }
+    if (nodePhases) {
+      const ph = Math.max(nodePhases.get(e.a) ?? 1, nodePhases.get(e.b) ?? 1);
+      if (!edgeByPhase.has(ph)) edgeByPhase.set(ph, []);
+      edgeByPhase.get(ph)!.push(seg);
+    } else {
+      edgePathAlloc.push(seg);
+    }
   }
   if (edgePathNormal.length) out.push(`<path class="e" d="${edgePathNormal.join("")}"/>`);
   if (edgePathAlloc.length) out.push(`<path class="ea" d="${edgePathAlloc.join("")}"/>`);
+  for (const [ph, segs] of [...edgeByPhase].sort((p, q) => p[0] - q[0])) {
+    out.push(`<path class="ea" data-phase="${ph}" d="${segs.join("")}"/>`);
+  }
 
   // Nodes
   const emphasize = options.emphasizeAllocated === true;
@@ -383,7 +402,8 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
     if (emphasize && alloc) r = Math.round(r * ALLOC_SCALE);
 
     const colorOverride = nodeColors?.get(id);
-    const dataAttr = tooltipIds?.has(id) ? ` data-id="${id}"` : "";
+    const phaseAttr = alloc && nodePhases?.has(id) ? ` data-phase="${nodePhases.get(id)}"` : "";
+    const dataAttr = (tooltipIds?.has(id) ? ` data-id="${id}"` : "") + phaseAttr;
 
     // Icon branch: allocated node with real passive art → circle filled with
     // its icon pattern + a phase-coloured ring.
