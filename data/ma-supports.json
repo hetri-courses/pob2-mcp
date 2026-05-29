@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-29T16:58:59.857Z",
+  "generatedAt": "2026-05-29T17:28:11.766Z",
   "calcVersion": "0_5",
   "ascendancy": "Martial Artist",
   "skills": {
@@ -10,6 +10,8 @@
           "name": "Zerphi's Infamy",
           "delta": 976.032,
           "pct": 70.54,
+          "tier": 0,
+          "gemFamily": "Zerphi's Legacy",
           "tags": [
             "support",
             "lineage",
@@ -22,6 +24,8 @@
           "name": "Uul-Netol's Embrace",
           "delta": 849.4059,
           "pct": 61.39,
+          "tier": 0,
+          "gemFamily": "Breachlord",
           "tags": [
             "support",
             "lineage",
@@ -34,6 +38,8 @@
           "name": "Brutality III",
           "delta": 626.1843,
           "pct": 45.25,
+          "tier": 5,
+          "gemFamily": "Brutality",
           "tags": [
             "support",
             "physical"
@@ -44,6 +50,8 @@
           "name": "Concentrated Area",
           "delta": 577.4324,
           "pct": 41.73,
+          "tier": 1,
+          "gemFamily": "Concentrated Area",
           "tags": [
             "support",
             "area"
@@ -54,6 +62,8 @@
           "name": "Hit and Run",
           "delta": 549.6968,
           "pct": 39.73,
+          "tier": 4,
+          "gemFamily": "Hit and Run",
           "tags": [
             "support",
             "attack",
@@ -65,6 +75,8 @@
           "name": "Brutality II",
           "delta": 439.0025,
           "pct": 31.73,
+          "tier": 2,
+          "gemFamily": "Brutality",
           "tags": [
             "support",
             "physical"
@@ -75,6 +87,8 @@
           "name": "Heavy Swing",
           "delta": 431.0676,
           "pct": 31.15,
+          "tier": 4,
+          "gemFamily": "Heavy Swing",
           "tags": [
             "support",
             "attack",
@@ -87,6 +101,8 @@
           "name": "Brutality I",
           "delta": 347.0445,
           "pct": 25.08,
+          "tier": 1,
+          "gemFamily": "Brutality",
           "tags": [
             "support",
             "physical"
@@ -97,6 +113,8 @@
           "name": "Heft",
           "delta": 346.7548,
           "pct": 25.06,
+          "tier": 5,
+          "gemFamily": "Heft",
           "tags": [
             "support",
             "physical"
@@ -107,6 +125,8 @@
           "name": "Ancestral Call II",
           "delta": 345.1733,
           "pct": 24.95,
+          "tier": 5,
+          "gemFamily": "Ancestral Call",
           "tags": [
             "support",
             "attack",
@@ -119,6 +139,8 @@
           "name": "Garukhan's Resolve",
           "delta": 305.7701,
           "pct": 22.1,
+          "tier": 0,
+          "gemFamily": "Garukhan's Resolve",
           "tags": [
             "support",
             "lineage",
@@ -130,6 +152,8 @@
           "name": "Uhtred's Exodus",
           "delta": 297.4336,
           "pct": 21.5,
+          "tier": 0,
+          "gemFamily": "Uhtred of Kalguur",
           "tags": [
             "support",
             "lineage"
@@ -140,6 +164,8 @@
           "name": "Inexorable Critical I",
           "delta": 282.0706,
           "pct": 20.38,
+          "tier": 3,
+          "gemFamily": "Inexorable Critical",
           "tags": [
             "support"
           ],
@@ -149,6 +175,8 @@
           "name": "Cold Attunement",
           "delta": 238.6531,
           "pct": 17.25,
+          "tier": 1,
+          "gemFamily": "Cold Attunement",
           "tags": [
             "support",
             "attack",
@@ -160,6 +188,8 @@
           "name": "Lightning Attunement",
           "delta": 238.6531,
           "pct": 17.25,
+          "tier": 1,
+          "gemFamily": "Lightning Attunement",
           "tags": [
             "support",
             "attack",
@@ -171,6 +201,8 @@
           "name": "Rapid Attacks II",
           "delta": 236.9383,
           "pct": 17.12,
+          "tier": 4,
+          "gemFamily": "Rapid Attacks",
           "tags": [
             "support",
             "attack"
@@ -181,6 +213,8 @@
           "name": "Rakiata's Flow",
           "delta": 212.6283,
           "pct": 15.37,
+          "tier": 0,
+          "gemFamily": "Rakiata's Flow",
           "tags": [
             "support",
             "lineage"
@@ -191,6 +225,8 @@
           "name": "Fire Attunement",
           "delta": 212.0746,
           "pct": 15.33,
+          "tier": 1,
+          "gemFamily": "Fire Attunement",
           "tags": [
             "support",
             "attack",
@@ -202,6 +238,8 @@
           "name": "Ancestral Call I",
           "delta": 205.7554,
           "pct": 14.87,
+          "tier": 4,
+          "gemFamily": "Ancestral Call",
           "tags": [
             "support",
             "attack",
@@ -214,6 +252,8 @@
           "name": "Rage III",
           "delta": 142.163,
           "pct": 10.27,
+          "tier": 5,
+          "gemFamily": "Rage",
           "tags": [
             "support",
             "attack",
@@ -225,6 +265,8 @@
           "name": "Rapid Attacks I",
           "delta": 142.163,
           "pct": 10.27,
+          "tier": 1,
+          "gemFamily": "Rapid Attacks",
           "tags": [
             "support",
             "attack"
@@ -235,6 +277,8 @@
           "name": "Overextend",
           "delta": 107.9347,
           "pct": 7.8,
+          "tier": 2,
+          "gemFamily": "Overextend",
           "tags": [
             "support",
             "attack"
@@ -245,6 +289,8 @@
           "name": "Supercritical",
           "delta": 102.5135,
           "pct": 7.41,
+          "tier": 3,
+          "gemFamily": "Supercritical",
           "tags": [
             "support"
           ],
@@ -254,6 +300,8 @@
           "name": "Inexorable Critical II",
           "delta": 96.388,
           "pct": 6.97,
+          "tier": 4,
+          "gemFamily": "Inexorable Critical",
           "tags": [
             "support"
           ],
@@ -263,6 +311,8 @@
           "name": "Physical Mastery",
           "delta": 94.4958,
           "pct": 6.83,
+          "tier": 5,
+          "gemFamily": "Mastery",
           "tags": [
             "support",
             "physical"
@@ -278,6 +328,8 @@
           "name": "Uul-Netol's Embrace",
           "delta": 755.2735,
           "pct": 63.97,
+          "tier": 0,
+          "gemFamily": "Breachlord",
           "tags": [
             "support",
             "lineage",
@@ -290,6 +342,8 @@
           "name": "Brutality III",
           "delta": 558.9085,
           "pct": 47.34,
+          "tier": 5,
+          "gemFamily": "Brutality",
           "tags": [
             "support",
             "physical"
@@ -300,6 +354,8 @@
           "name": "Concentrated Area",
           "delta": 501.5239,
           "pct": 42.48,
+          "tier": 1,
+          "gemFamily": "Concentrated Area",
           "tags": [
             "support",
             "area"
@@ -310,6 +366,8 @@
           "name": "Hit and Run",
           "delta": 468.9975,
           "pct": 39.73,
+          "tier": 4,
+          "gemFamily": "Hit and Run",
           "tags": [
             "support",
             "attack",
@@ -321,6 +379,8 @@
           "name": "Brutality II",
           "delta": 379.7055,
           "pct": 32.16,
+          "tier": 2,
+          "gemFamily": "Brutality",
           "tags": [
             "support",
             "physical"
@@ -331,6 +391,8 @@
           "name": "Heavy Swing",
           "delta": 377.4879,
           "pct": 31.97,
+          "tier": 4,
+          "gemFamily": "Heavy Swing",
           "tags": [
             "support",
             "attack",
@@ -343,6 +405,8 @@
           "name": "Heft",
           "delta": 300.436,
           "pct": 25.45,
+          "tier": 5,
+          "gemFamily": "Heft",
           "tags": [
             "support",
             "physical"
@@ -353,6 +417,8 @@
           "name": "Ancestral Call II",
           "delta": 299.8851,
           "pct": 25.4,
+          "tier": 5,
+          "gemFamily": "Ancestral Call",
           "tags": [
             "support",
             "attack",
@@ -365,6 +431,8 @@
           "name": "Brutality I",
           "delta": 299.2186,
           "pct": 25.35,
+          "tier": 1,
+          "gemFamily": "Brutality",
           "tags": [
             "support",
             "physical"
@@ -375,6 +443,8 @@
           "name": "Garukhan's Resolve",
           "delta": 267.198,
           "pct": 22.63,
+          "tier": 0,
+          "gemFamily": "Garukhan's Resolve",
           "tags": [
             "support",
             "lineage",
@@ -386,6 +456,8 @@
           "name": "Uhtred's Exodus",
           "delta": 257.1301,
           "pct": 21.78,
+          "tier": 0,
+          "gemFamily": "Uhtred of Kalguur",
           "tags": [
             "support",
             "lineage"
@@ -396,6 +468,8 @@
           "name": "Inexorable Critical I",
           "delta": 246.4381,
           "pct": 20.87,
+          "tier": 3,
+          "gemFamily": "Inexorable Critical",
           "tags": [
             "support"
           ],
@@ -405,6 +479,8 @@
           "name": "Cold Attunement",
           "delta": 212.0746,
           "pct": 17.96,
+          "tier": 1,
+          "gemFamily": "Cold Attunement",
           "tags": [
             "support",
             "attack",
@@ -416,6 +492,8 @@
           "name": "Lightning Attunement",
           "delta": 212.0746,
           "pct": 17.96,
+          "tier": 1,
+          "gemFamily": "Lightning Attunement",
           "tags": [
             "support",
             "attack",
@@ -427,6 +505,8 @@
           "name": "Rapid Attacks II",
           "delta": 202.1541,
           "pct": 17.12,
+          "tier": 4,
+          "gemFamily": "Rapid Attacks",
           "tags": [
             "support",
             "attack"
@@ -437,6 +517,8 @@
           "name": "Fire Attunement",
           "delta": 188.8184,
           "pct": 15.99,
+          "tier": 1,
+          "gemFamily": "Fire Attunement",
           "tags": [
             "support",
             "attack",
@@ -448,6 +530,8 @@
           "name": "Rakiata's Flow",
           "delta": 188.2647,
           "pct": 15.95,
+          "tier": 0,
+          "gemFamily": "Rakiata's Flow",
           "tags": [
             "support",
             "lineage"
@@ -458,6 +542,8 @@
           "name": "Ancestral Call I",
           "delta": 178.6239,
           "pct": 15.13,
+          "tier": 4,
+          "gemFamily": "Ancestral Call",
           "tags": [
             "support",
             "attack",
@@ -470,6 +556,8 @@
           "name": "Rage III",
           "delta": 121.2925,
           "pct": 10.27,
+          "tier": 5,
+          "gemFamily": "Rage",
           "tags": [
             "support",
             "attack",
@@ -481,6 +569,8 @@
           "name": "Rapid Attacks I",
           "delta": 121.2925,
           "pct": 10.27,
+          "tier": 1,
+          "gemFamily": "Rapid Attacks",
           "tags": [
             "support",
             "attack"
@@ -491,6 +581,8 @@
           "name": "Overextend",
           "delta": 95.1536,
           "pct": 8.06,
+          "tier": 2,
+          "gemFamily": "Overextend",
           "tags": [
             "support",
             "attack"
@@ -501,6 +593,8 @@
           "name": "Supercritical",
           "delta": 91.0528,
           "pct": 7.71,
+          "tier": 3,
+          "gemFamily": "Supercritical",
           "tags": [
             "support"
           ],
@@ -510,6 +604,8 @@
           "name": "Inexorable Critical II",
           "delta": 82.221,
           "pct": 6.96,
+          "tier": 4,
+          "gemFamily": "Inexorable Critical",
           "tags": [
             "support"
           ],
@@ -519,6 +615,8 @@
           "name": "Physical Mastery",
           "delta": 77.452,
           "pct": 6.56,
+          "tier": 5,
+          "gemFamily": "Mastery",
           "tags": [
             "support",
             "physical"
@@ -529,6 +627,8 @@
           "name": "Dialla's Desire",
           "delta": 77.452,
           "pct": 6.56,
+          "tier": 0,
+          "gemFamily": "Dialla's Desire",
           "tags": [
             "support",
             "lineage"

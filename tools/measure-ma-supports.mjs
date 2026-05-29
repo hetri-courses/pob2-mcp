@@ -69,6 +69,12 @@ for (const skill of SKILLS) {
         name: p.candidate.name,
         delta: p.delta,
         pct: p.pct,
+        // tier + gemFamily so a level-phased guide can group tiers (Brutality
+        // I/II/III) and pick the one a character can actually use — higher tier
+        // = stronger but obtained later. (Support gems carry no character-level
+        // requirement in the data; tier is the honest progression gate.)
+        tier: p.candidate.tier ?? (gem ? gem.tier : null),
+        gemFamily: p.candidate.gemFamily ?? (gem ? gem.gemFamily ?? null : null),
         tags: p.candidate.tags,
         grantedEffectId: gem ? gem.grantedEffectId : null,
       };

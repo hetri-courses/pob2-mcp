@@ -209,7 +209,16 @@ async function sendBatch(bridge: BridgeLike, reqs: Array<{ action: string; param
 // ===========================================================================
 
 export interface GemLinkProposal {
-  candidate: { name: string; gemType: string; tier: number; tags: string[]; isSupport: boolean };
+  candidate: {
+    name: string;
+    gemType: string;
+    /** Power tier of this gem within its family (higher = stronger, obtained later). */
+    tier: number;
+    /** Family shared across tiers, e.g. "Brutality" for Brutality I/II/III. null if standalone. */
+    gemFamily: string | null;
+    tags: string[];
+    isSupport: boolean;
+  };
   baselineMetric: number;
   withCandidateMetric: number;
   delta: number;
@@ -275,7 +284,11 @@ export async function suggestGemLink(
   } = {}
 ): Promise<SuggestGemLinkResult> {
   const targetMetric = options.targetMetric ?? "TotalDPS";
-  const maxCandidates = options.maxCandidates ?? 30;
+  // Wide default: the damage-tag heuristic ranks likely scalers first, but it
+  // can't see tag-less damage supports, so we test a broad cut (~6s) to make
+  // sure real multipliers (Brutality, Concentrated Area) aren't missed. Pass a
+  // higher value to approach exhaustive; the measurement pipeline tests all.
+  const maxCandidates = options.maxCandidates ?? 60;
   const limit = options.limit ?? 8;
   const simLevel = options.simLevel ?? 20;
   const simQuality = options.simQuality ?? 20;
@@ -330,6 +343,16 @@ export async function suggestGemLink(
     "minion", "totem", "aura", "area", "attack", "channelling",
     "warcry", "strike", "slam", "bow",
   ]);
+  // Damage-TYPE/scope tags. A support sharing one of these WITH the active skill
+  // almost certainly scales that skill's damage (Physical support on a Physical
+  // skill). This is the strong signal. Delivery tags (attack/melee/strike/spell)
+  // are deliberately NOT here: every engine-compatible support shares the skill's
+  // delivery, so counting them just floats conditional supports (Barbs/Behead,
+  // which do nothing without bleed/low-life) above real multipliers (Brutality,
+  // Concentrated Area) and pushes the latter out of the maxCandidates cut.
+  const DAMAGE_TYPE_TAGS = new Set([
+    "physical", "fire", "cold", "lightning", "chaos", "area", "projectile",
+  ]);
 
   // Try the engine-canonical filter first. Only valid against the main group;
   // for other groups, fall back to tag-overlap heuristic.
@@ -360,8 +383,19 @@ export async function suggestGemLink(
     .filter((g) => !g.tags.some((t) => TRIGGER_TAGS.has(t.toLowerCase())))
     .map((g) => {
       const overlap = g.tags.filter((t) => activeTags.includes(t)).length;
+      // Damage-type tags shared with the skill = strong "this scales the skill" signal.
+      const dmgOverlap = g.tags.filter(
+        (t) => DAMAGE_TYPE_TAGS.has(t.toLowerCase()) && activeTags.includes(t)
+      ).length;
       const scalingHits = g.tags.filter((t) => SCALING_TAGS.has(t.toLowerCase())).length;
-      const score = overlap * 10 + scalingHits * 5 - (g.tier ?? 0);
+      // dmgOverlap dominates so broad multipliers (Brutality = physical) outrank
+      // pure-delivery supports. NO tier penalty: higher tiers are stronger and we
+      // WANT them tested (tier gating is surfaced via tier/gemFamily, not hidden
+      // by skipping them). NO generic-overlap term: every engine-compatible
+      // support shares the skill's delivery tags, so it's noise. Tag heuristics
+      // still can't see tag-less damage supports (some crit gems) — that's why the
+      // default cut is wide and the measurement pipeline tests ALL candidates.
+      const score = dmgOverlap * 25 + scalingHits * 4;
       return { gem: g, overlap, score };
     })
     // When using engine filter, keep all; tag-overlap mode requires overlap > 0
@@ -423,6 +457,7 @@ export async function suggestGemLink(
         name: cand.name,
         gemType: cand.gemType,
         tier: cand.tier,
+        gemFamily: cand.gemFamily ?? null,
         tags: cand.tags,
         isSupport: cand.isSupport,
       },

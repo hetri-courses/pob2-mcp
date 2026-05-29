@@ -592,7 +592,7 @@ const TOOLS = [
       properties: {
         groupIndex: { type: "number", description: "Socket group index (default: build's mainSocketGroup)." },
         targetMetric: { type: "string", description: "Stat to optimize. Default 'TotalDPS'." },
-        maxCandidates: { type: "number", description: "How many supports to actually simulate. Default 12." },
+        maxCandidates: { type: "number", description: "How many supports to actually simulate (ranked by a damage-tag heuristic first). Default 60 (~6s). Pass a high value (e.g. 250) to test ALL compatible supports — exhaustive but slower; the heuristic can't see tag-less damage supports like some crit gems." },
         limit: { type: "number", description: "Max proposals to return. Default 8." },
         simLevel: { type: "number", description: "Gem level for the simulated add. Default 20." },
         simQuality: { type: "number", description: "Gem quality for the simulated add. Default 20." },
