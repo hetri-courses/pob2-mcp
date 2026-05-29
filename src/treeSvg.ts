@@ -104,6 +104,26 @@ export interface RenderTreeSvgOptions {
   classStartIndex?: number;
   /** SVG width attribute (HTML pixels). Default 800. */
   width?: number;
+  /** id attribute on the root <svg> (so host-page JS can pan/zoom it). */
+  svgId?: string;
+  /**
+   * Make allocated nodes pop: dim all unallocated nodes/edges, enlarge +
+   * glow allocated ones, and add hover <title>s with the node name. Ideal
+   * when highlighting a small "landmark map" on the full tree.
+   */
+  emphasizeAllocated?: boolean;
+  /**
+   * Set the initial viewBox to the bounding box of allocated nodes (+padding)
+   * instead of the whole tree, so the SVG opens framed on the build. The full
+   * tree bounds are emitted as data-full-viewbox for a host-page "reset" button.
+   */
+  frameOnAllocated?: boolean;
+  /**
+   * If provided, frame on exactly these node ids instead of all allocated.
+   * Use to exclude off-center ascendancy nodes (drawn in their own corner)
+   * so the initial view tightens on the main-tree landmarks.
+   */
+  frameNodeIds?: Set<number>;
   /** Optional CSS-color overrides. */
   colors?: {
     background?: string;
@@ -198,9 +218,37 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
   }
   const pad = 200; // tree-units of padding around the rendered area
   minX -= pad; maxX += pad; minY -= pad; maxY += pad;
-  const w = Math.round(maxX - minX);
-  const h = Math.round(maxY - minY);
-  const height = Math.round(width * (h / w));
+  // Full-tree viewBox (used for aspect ratio + the host-page "reset" control).
+  const fullMinX = Math.round(minX), fullMinY = Math.round(minY);
+  const fullW = Math.round(maxX - minX);
+  const fullH = Math.round(maxY - minY);
+  const height = Math.round(width * (fullH / fullW));
+
+  // Optionally frame the initial view on the allocated nodes' bounding box.
+  let vbX = fullMinX, vbY = fullMinY, vbW = fullW, vbH = fullH;
+  const frameSet = options.frameNodeIds && options.frameNodeIds.size > 0 ? options.frameNodeIds : allocated;
+  if (options.frameOnAllocated && frameSet.size > 0) {
+    let aMinX = Infinity, aMaxX = -Infinity, aMinY = Infinity, aMaxY = -Infinity;
+    for (const id of frameSet) {
+      const c = includedCoords.get(id);
+      if (!c) continue;
+      if (c.x < aMinX) aMinX = c.x;
+      if (c.x > aMaxX) aMaxX = c.x;
+      if (c.y < aMinY) aMinY = c.y;
+      if (c.y > aMaxY) aMaxY = c.y;
+    }
+    if (aMinX !== Infinity) {
+      const fpad = 900; // generous so landmarks aren't flush to the edge
+      aMinX -= fpad; aMaxX += fpad; aMinY -= fpad; aMaxY += fpad;
+      // Match the SVG's aspect ratio so nothing is squished.
+      const aspect = fullW / fullH;
+      let bw = aMaxX - aMinX, bh = aMaxY - aMinY;
+      if (bw / bh > aspect) bh = bw / aspect; else bw = bh * aspect;
+      const cx = (aMinX + aMaxX) / 2, cy = (aMinY + aMaxY) / 2;
+      vbX = Math.round(cx - bw / 2); vbY = Math.round(cy - bh / 2);
+      vbW = Math.round(bw); vbH = Math.round(bh);
+    }
+  }
 
   // Sizes are in tree-coords (so viewBox scales them).
   const R = { keystone: 90, notable: 55, normal: 32, jewel: 50, classStart: 110 };
@@ -221,14 +269,33 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
     .cs{fill:#404040;stroke:#aa6633;stroke-width:6}
     .csa{fill:#cc8844;stroke:#aa6633;stroke-width:6}`;
 
+  // Emphasis mode: dim everything unallocated, make allocated nodes glow.
+  const emph = options.emphasizeAllocated
+    ? `
+    .n,.nt,.k,.j,.cs{opacity:.28}
+    .e{opacity:.15}
+    .na,.nta,.ka,.ja,.csa{filter:url(#glow)}
+    .na,.nta,.ka,.ja,.csa{stroke:#1a1208;stroke-width:5}`
+    : "";
+
   const out: string[] = [];
+  const idAttr = options.svgId ? ` id="${options.svgId}"` : "";
   out.push(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
-      `viewBox="${Math.round(minX)} ${Math.round(minY)} ${w} ${h}" ` +
-      `style="background:${colors.background};display:block;max-width:100%;height:auto" ` +
+    `<svg xmlns="http://www.w3.org/2000/svg"${idAttr} width="${width}" height="${height}" ` +
+      `viewBox="${vbX} ${vbY} ${vbW} ${vbH}" ` +
+      `data-full-viewbox="${fullMinX} ${fullMinY} ${fullW} ${fullH}" ` +
+      `style="background:${colors.background};display:block;max-width:100%;height:auto;touch-action:none" ` +
       `role="img" aria-label="Passive skill tree">`,
   );
-  out.push(`<style>${style}</style>`);
+  out.push(`<style>${style}${emph}</style>`);
+  if (options.emphasizeAllocated) {
+    out.push(
+      `<defs><filter id="glow" x="-120%" y="-120%" width="340%" height="340%">` +
+        `<feGaussianBlur stdDeviation="22" result="b"/>` +
+        `<feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>` +
+        `</filter></defs>`,
+    );
+  }
 
   // Edges first (so nodes overlay them).
   // Two combined <path>s (one per state) collapse ~2-3KB of element framing
@@ -245,6 +312,8 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
   if (edgePathAlloc.length) out.push(`<path class="ea" d="${edgePathAlloc.join("")}"/>`);
 
   // Nodes
+  const emphasize = options.emphasizeAllocated === true;
+  const ALLOC_SCALE = 2.4; // enlarge allocated landmarks in emphasize mode
   out.push(`<g>`);
   for (const [id, node] of includedNodes.entries()) {
     const { x, y } = includedCoords.get(id)!;
@@ -268,14 +337,20 @@ export function renderTreeSvg(raw: RawTreeFull, options: RenderTreeSvgOptions): 
       const isCurrentClass = options.classStartIndex === node.classStartIndex;
       cls = isCurrentClass ? "csa" : "cs";
     }
+    if (emphasize && alloc) r = Math.round(r * ALLOC_SCALE);
+
+    // Hover label (native tooltip) for allocated landmarks in emphasize mode.
+    const title = emphasize && alloc && node.name
+      ? `<title>${node.name.replace(/[<&]/g, "")}</title>`
+      : "";
 
     if (node.isJewelSocket) {
       const half = r;
-      out.push(
-        `<rect x="${cx - half}" y="${cy - half}" width="${half * 2}" height="${half * 2}" class="${cls}" transform="rotate(45 ${cx} ${cy})"/>`,
-      );
+      const rect = `<rect x="${cx - half}" y="${cy - half}" width="${half * 2}" height="${half * 2}" class="${cls}" transform="rotate(45 ${cx} ${cy})">`;
+      out.push(title ? `${rect}${title}</rect>` : `${rect.replace(/>$/, "/>")}`);
     } else {
-      out.push(`<circle cx="${cx}" cy="${cy}" r="${r}" class="${cls}"/>`);
+      const circ = `<circle cx="${cx}" cy="${cy}" r="${r}" class="${cls}">`;
+      out.push(title ? `${circ}${title}</circle>` : `<circle cx="${cx}" cy="${cy}" r="${r}" class="${cls}"/>`);
     }
   }
   out.push(`</g>`);
