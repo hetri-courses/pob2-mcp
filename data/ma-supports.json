@@ -1,14 +1,80 @@
 {
-  "generatedAt": "2026-05-29T15:29:08.678Z",
-  "calcVersion": "0_4",
+  "generatedAt": "2026-05-29T16:58:59.857Z",
+  "calcVersion": "0_5",
+  "ascendancy": "Martial Artist",
   "skills": {
     "Killing Palm": {
-      "baseline": 1345.8094320265,
+      "baseline": 1383.7195568724,
       "supports": [
         {
+          "name": "Zerphi's Infamy",
+          "delta": 976.032,
+          "pct": 70.54,
+          "tags": [
+            "support",
+            "lineage",
+            "warcry",
+            "area"
+          ],
+          "grantedEffectId": "SupportZerphisLegacyPlayer"
+        },
+        {
+          "name": "Uul-Netol's Embrace",
+          "delta": 849.4059,
+          "pct": 61.39,
+          "tags": [
+            "support",
+            "lineage",
+            "physical",
+            "chaos"
+          ],
+          "grantedEffectId": "SupportUulNetolsEmbracePlayer"
+        },
+        {
+          "name": "Brutality III",
+          "delta": 626.1843,
+          "pct": 45.25,
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayerThree"
+        },
+        {
+          "name": "Concentrated Area",
+          "delta": 577.4324,
+          "pct": 41.73,
+          "tags": [
+            "support",
+            "area"
+          ],
+          "grantedEffectId": "SupportConcentratedAreaPlayer"
+        },
+        {
+          "name": "Hit and Run",
+          "delta": 549.6968,
+          "pct": 39.73,
+          "tags": [
+            "support",
+            "attack",
+            "conditional"
+          ],
+          "grantedEffectId": "SupportHitAndRunPlayer"
+        },
+        {
+          "name": "Brutality II",
+          "delta": 439.0025,
+          "pct": 31.73,
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayerTwo"
+        },
+        {
           "name": "Heavy Swing",
-          "delta": 427.4177,
-          "pct": 31.76,
+          "delta": 431.0676,
+          "pct": 31.15,
           "tags": [
             "support",
             "attack",
@@ -16,11 +82,138 @@
             "physical"
           ],
           "grantedEffectId": "SupportMeleePhysicalDamagePlayer"
+        },
+        {
+          "name": "Brutality I",
+          "delta": 347.0445,
+          "pct": 25.08,
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayer"
+        },
+        {
+          "name": "Heft",
+          "delta": 346.7548,
+          "pct": 25.06,
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportHeftPlayer"
+        },
+        {
+          "name": "Ancestral Call II",
+          "delta": 345.1733,
+          "pct": 24.95,
+          "tags": [
+            "support",
+            "attack",
+            "melee",
+            "strike"
+          ],
+          "grantedEffectId": "SupportAncestralCallPlayerTwo"
+        },
+        {
+          "name": "Garukhan's Resolve",
+          "delta": 305.7701,
+          "pct": 22.1,
+          "tags": [
+            "support",
+            "lineage",
+            "attack"
+          ],
+          "grantedEffectId": "SupportGarukhansResolvePlayer"
+        },
+        {
+          "name": "Uhtred's Exodus",
+          "delta": 297.4336,
+          "pct": 21.5,
+          "tags": [
+            "support",
+            "lineage"
+          ],
+          "grantedEffectId": "SupportUhtredExodusPlayer"
+        },
+        {
+          "name": "Inexorable Critical I",
+          "delta": 282.0706,
+          "pct": 20.38,
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportInevitableCriticalsPlayer"
+        },
+        {
+          "name": "Cold Attunement",
+          "delta": 238.6531,
+          "pct": 17.25,
+          "tags": [
+            "support",
+            "attack",
+            "cold"
+          ],
+          "grantedEffectId": "SupportAddedColdDamagePlayer"
+        },
+        {
+          "name": "Lightning Attunement",
+          "delta": 238.6531,
+          "pct": 17.25,
+          "tags": [
+            "support",
+            "attack",
+            "lightning"
+          ],
+          "grantedEffectId": "SupportAddedLightningDamagePlayer"
+        },
+        {
+          "name": "Rapid Attacks II",
+          "delta": 236.9383,
+          "pct": 17.12,
+          "tags": [
+            "support",
+            "attack"
+          ],
+          "grantedEffectId": "SupportRapidAttacksPlayerTwo"
+        },
+        {
+          "name": "Rakiata's Flow",
+          "delta": 212.6283,
+          "pct": 15.37,
+          "tags": [
+            "support",
+            "lineage"
+          ],
+          "grantedEffectId": "SupportRakiatasFlowPlayer"
+        },
+        {
+          "name": "Fire Attunement",
+          "delta": 212.0746,
+          "pct": 15.33,
+          "tags": [
+            "support",
+            "attack",
+            "fire"
+          ],
+          "grantedEffectId": "SupportAddedFireDamagePlayer"
+        },
+        {
+          "name": "Ancestral Call I",
+          "delta": 205.7554,
+          "pct": 14.87,
+          "tags": [
+            "support",
+            "attack",
+            "melee",
+            "strike"
+          ],
+          "grantedEffectId": "SupportAncestralCallPlayer"
         },
         {
           "name": "Rage III",
           "delta": 142.163,
-          "pct": 10.56,
+          "pct": 10.27,
           "tags": [
             "support",
             "attack",
@@ -29,294 +222,115 @@
           "grantedEffectId": "SupportRagePlayerThree"
         },
         {
-          "name": "Impact Shockwave",
-          "delta": 0,
-          "pct": 0,
+          "name": "Rapid Attacks I",
+          "delta": 142.163,
+          "pct": 10.27,
           "tags": [
             "support",
-            "attack",
-            "area",
-            "melee",
-            "strike"
+            "attack"
           ],
-          "grantedEffectId": "ImpactShockwaveSupportPlayer"
+          "grantedEffectId": "SupportRapidAttacksPlayer"
         },
         {
-          "name": "Rip",
-          "delta": 0,
-          "pct": 0,
+          "name": "Overextend",
+          "delta": 107.9347,
+          "pct": 7.8,
           "tags": [
             "support",
-            "attack",
-            "melee",
-            "physical",
-            "duration",
-            "remnant"
+            "attack"
           ],
-          "grantedEffectId": "SupportRipPlayer"
+          "grantedEffectId": "SupportOverextendPlayer"
         },
         {
-          "name": "Practiced Combo",
-          "delta": 0,
-          "pct": 0,
+          "name": "Supercritical",
+          "delta": 102.5135,
+          "pct": 7.41,
           "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
+            "support"
           ],
-          "grantedEffectId": "SupportPracticedComboPlayer"
+          "grantedEffectId": "SupportIncreasedCriticalDamagePlayer"
         },
         {
-          "name": "Ancestral Call II",
-          "delta": 0,
-          "pct": 0,
+          "name": "Inexorable Critical II",
+          "delta": 96.388,
+          "pct": 6.97,
           "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
+            "support"
           ],
-          "grantedEffectId": "SupportAncestralCallPlayerTwo"
+          "grantedEffectId": "SupportInevitableCriticalsPlayerTwo"
         },
         {
-          "name": "Combo Finisher I",
-          "delta": 0,
-          "pct": 0,
+          "name": "Physical Mastery",
+          "delta": 94.4958,
+          "pct": 6.83,
           "tags": [
             "support",
-            "attack",
-            "melee",
-            "strike",
-            "conditional"
-          ],
-          "grantedEffectId": "SupportComboFinisherPlayer"
-        },
-        {
-          "name": "Combo Finisher II",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike",
-            "conditional"
-          ],
-          "grantedEffectId": "SupportComboFinisherPlayerTwo"
-        },
-        {
-          "name": "Ancestral Call I",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportAncestralCallPlayer"
-        },
-        {
-          "name": "Ancestral Aid",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike",
-            "conditional"
-          ],
-          "grantedEffectId": "SupportAncestralAidPlayer"
-        },
-        {
-          "name": "Barbs I",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportBarbsPlayer"
-        },
-        {
-          "name": "Barbs II",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportBarbsPlayerTwo"
-        },
-        {
-          "name": "Barbs III",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportBarbsPlayerThree"
-        },
-        {
-          "name": "Tear",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
             "physical"
           ],
-          "grantedEffectId": "SupportTearPlayer"
-        },
-        {
-          "name": "Behead I",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportBeheadPlayer"
-        },
-        {
-          "name": "Behead II",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportBeheadPlayerTwo"
-        },
-        {
-          "name": "Einhar's Beastrite",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "lineage",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportEinharsBeastritePlayer"
-        },
-        {
-          "name": "Bloodlust",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "physical"
-          ],
-          "grantedEffectId": "SupportBloodlustPlayer"
-        },
-        {
-          "name": "Retaliate II",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee"
-          ],
-          "grantedEffectId": "SupportRetaliatePlayerTwo"
-        },
-        {
-          "name": "Rally",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee"
-          ],
-          "grantedEffectId": "SupportRallyPlayer"
-        },
-        {
-          "name": "Retaliate I",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee"
-          ],
-          "grantedEffectId": "SupportRetaliatePlayer"
-        },
-        {
-          "name": "Rage I",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee"
-          ],
-          "grantedEffectId": "SupportRagePlayer"
-        },
-        {
-          "name": "Rage II",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee"
-          ],
-          "grantedEffectId": "SupportRagePlayerTwo"
-        },
-        {
-          "name": "Ice Bite I",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "warcry",
-            "cold",
-            "duration"
-          ],
-          "grantedEffectId": "SupportIceBitePlayer"
-        },
-        {
-          "name": "Ice Bite II",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "warcry",
-            "cold",
-            "duration"
-          ],
-          "grantedEffectId": "SupportIceBitePlayerTwo"
+          "grantedEffectId": "SupportPhysicalMasteryPlayer"
         }
       ]
     },
     "Staggering Palm": {
-      "baseline": 1148.2352030644,
+      "baseline": 1180.5798566718,
       "supports": [
         {
+          "name": "Uul-Netol's Embrace",
+          "delta": 755.2735,
+          "pct": 63.97,
+          "tags": [
+            "support",
+            "lineage",
+            "physical",
+            "chaos"
+          ],
+          "grantedEffectId": "SupportUulNetolsEmbracePlayer"
+        },
+        {
+          "name": "Brutality III",
+          "delta": 558.9085,
+          "pct": 47.34,
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayerThree"
+        },
+        {
+          "name": "Concentrated Area",
+          "delta": 501.5239,
+          "pct": 42.48,
+          "tags": [
+            "support",
+            "area"
+          ],
+          "grantedEffectId": "SupportConcentratedAreaPlayer"
+        },
+        {
+          "name": "Hit and Run",
+          "delta": 468.9975,
+          "pct": 39.73,
+          "tags": [
+            "support",
+            "attack",
+            "conditional"
+          ],
+          "grantedEffectId": "SupportHitAndRunPlayer"
+        },
+        {
+          "name": "Brutality II",
+          "delta": 379.7055,
+          "pct": 32.16,
+          "tags": [
+            "support",
+            "physical"
+          ],
+          "grantedEffectId": "SupportBrutalityPlayerTwo"
+        },
+        {
           "name": "Heavy Swing",
-          "delta": 374.1516,
-          "pct": 32.58,
+          "delta": 377.4879,
+          "pct": 31.97,
           "tags": [
             "support",
             "attack",
@@ -326,59 +340,19 @@
           "grantedEffectId": "SupportMeleePhysicalDamagePlayer"
         },
         {
-          "name": "Rage III",
-          "delta": 121.2925,
-          "pct": 10.56,
+          "name": "Heft",
+          "delta": 300.436,
+          "pct": 25.45,
           "tags": [
             "support",
-            "attack",
-            "melee"
+            "physical"
           ],
-          "grantedEffectId": "SupportRagePlayerThree"
-        },
-        {
-          "name": "Impact Shockwave",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "area",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "ImpactShockwaveSupportPlayer"
-        },
-        {
-          "name": "Rip",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "physical",
-            "duration",
-            "remnant"
-          ],
-          "grantedEffectId": "SupportRipPlayer"
-        },
-        {
-          "name": "Practiced Combo",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportPracticedComboPlayer"
+          "grantedEffectId": "SupportHeftPlayer"
         },
         {
           "name": "Ancestral Call II",
-          "delta": 0,
-          "pct": 0,
+          "delta": 299.8851,
+          "pct": 25.4,
           "tags": [
             "support",
             "attack",
@@ -388,35 +362,102 @@
           "grantedEffectId": "SupportAncestralCallPlayerTwo"
         },
         {
-          "name": "Combo Finisher I",
-          "delta": 0,
-          "pct": 0,
+          "name": "Brutality I",
+          "delta": 299.2186,
+          "pct": 25.35,
           "tags": [
             "support",
-            "attack",
-            "melee",
-            "strike",
-            "conditional"
+            "physical"
           ],
-          "grantedEffectId": "SupportComboFinisherPlayer"
+          "grantedEffectId": "SupportBrutalityPlayer"
         },
         {
-          "name": "Combo Finisher II",
-          "delta": 0,
-          "pct": 0,
+          "name": "Garukhan's Resolve",
+          "delta": 267.198,
+          "pct": 22.63,
+          "tags": [
+            "support",
+            "lineage",
+            "attack"
+          ],
+          "grantedEffectId": "SupportGarukhansResolvePlayer"
+        },
+        {
+          "name": "Uhtred's Exodus",
+          "delta": 257.1301,
+          "pct": 21.78,
+          "tags": [
+            "support",
+            "lineage"
+          ],
+          "grantedEffectId": "SupportUhtredExodusPlayer"
+        },
+        {
+          "name": "Inexorable Critical I",
+          "delta": 246.4381,
+          "pct": 20.87,
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportInevitableCriticalsPlayer"
+        },
+        {
+          "name": "Cold Attunement",
+          "delta": 212.0746,
+          "pct": 17.96,
           "tags": [
             "support",
             "attack",
-            "melee",
-            "strike",
-            "conditional"
+            "cold"
           ],
-          "grantedEffectId": "SupportComboFinisherPlayerTwo"
+          "grantedEffectId": "SupportAddedColdDamagePlayer"
+        },
+        {
+          "name": "Lightning Attunement",
+          "delta": 212.0746,
+          "pct": 17.96,
+          "tags": [
+            "support",
+            "attack",
+            "lightning"
+          ],
+          "grantedEffectId": "SupportAddedLightningDamagePlayer"
+        },
+        {
+          "name": "Rapid Attacks II",
+          "delta": 202.1541,
+          "pct": 17.12,
+          "tags": [
+            "support",
+            "attack"
+          ],
+          "grantedEffectId": "SupportRapidAttacksPlayerTwo"
+        },
+        {
+          "name": "Fire Attunement",
+          "delta": 188.8184,
+          "pct": 15.99,
+          "tags": [
+            "support",
+            "attack",
+            "fire"
+          ],
+          "grantedEffectId": "SupportAddedFireDamagePlayer"
+        },
+        {
+          "name": "Rakiata's Flow",
+          "delta": 188.2647,
+          "pct": 15.95,
+          "tags": [
+            "support",
+            "lineage"
+          ],
+          "grantedEffectId": "SupportRakiatasFlowPlayer"
         },
         {
           "name": "Ancestral Call I",
-          "delta": 0,
-          "pct": 0,
+          "delta": 178.6239,
+          "pct": 15.13,
           "tags": [
             "support",
             "attack",
@@ -426,201 +467,73 @@
           "grantedEffectId": "SupportAncestralCallPlayer"
         },
         {
-          "name": "Ancestral Aid",
-          "delta": 0,
-          "pct": 0,
+          "name": "Rage III",
+          "delta": 121.2925,
+          "pct": 10.27,
           "tags": [
             "support",
             "attack",
-            "melee",
-            "strike",
-            "conditional"
+            "melee"
           ],
-          "grantedEffectId": "SupportAncestralAidPlayer"
+          "grantedEffectId": "SupportRagePlayerThree"
         },
         {
-          "name": "Barbs I",
-          "delta": 0,
-          "pct": 0,
+          "name": "Rapid Attacks I",
+          "delta": 121.2925,
+          "pct": 10.27,
           "tags": [
             "support",
-            "attack",
-            "melee",
-            "strike"
+            "attack"
           ],
-          "grantedEffectId": "SupportBarbsPlayer"
+          "grantedEffectId": "SupportRapidAttacksPlayer"
         },
         {
-          "name": "Barbs II",
-          "delta": 0,
-          "pct": 0,
+          "name": "Overextend",
+          "delta": 95.1536,
+          "pct": 8.06,
           "tags": [
             "support",
-            "attack",
-            "melee",
-            "strike"
+            "attack"
           ],
-          "grantedEffectId": "SupportBarbsPlayerTwo"
+          "grantedEffectId": "SupportOverextendPlayer"
         },
         {
-          "name": "Barbs III",
-          "delta": 0,
-          "pct": 0,
+          "name": "Supercritical",
+          "delta": 91.0528,
+          "pct": 7.71,
           "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
+            "support"
           ],
-          "grantedEffectId": "SupportBarbsPlayerThree"
+          "grantedEffectId": "SupportIncreasedCriticalDamagePlayer"
         },
         {
-          "name": "Tear",
-          "delta": 0,
-          "pct": 0,
+          "name": "Inexorable Critical II",
+          "delta": 82.221,
+          "pct": 6.96,
+          "tags": [
+            "support"
+          ],
+          "grantedEffectId": "SupportInevitableCriticalsPlayerTwo"
+        },
+        {
+          "name": "Physical Mastery",
+          "delta": 77.452,
+          "pct": 6.56,
           "tags": [
             "support",
-            "attack",
-            "melee",
             "physical"
           ],
-          "grantedEffectId": "SupportTearPlayer"
+          "grantedEffectId": "SupportPhysicalMasteryPlayer"
         },
         {
-          "name": "Behead I",
-          "delta": 0,
-          "pct": 0,
+          "name": "Dialla's Desire",
+          "delta": 77.452,
+          "pct": 6.56,
           "tags": [
             "support",
-            "attack",
-            "melee",
-            "strike"
+            "lineage"
           ],
-          "grantedEffectId": "SupportBeheadPlayer"
-        },
-        {
-          "name": "Behead II",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportBeheadPlayerTwo"
-        },
-        {
-          "name": "Einhar's Beastrite",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "lineage",
-            "attack",
-            "melee",
-            "strike"
-          ],
-          "grantedEffectId": "SupportEinharsBeastritePlayer"
-        },
-        {
-          "name": "Bloodlust",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "melee",
-            "physical"
-          ],
-          "grantedEffectId": "SupportBloodlustPlayer"
-        },
-        {
-          "name": "Ice Bite I",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "warcry",
-            "cold",
-            "duration"
-          ],
-          "grantedEffectId": "SupportIceBitePlayer"
-        },
-        {
-          "name": "Ice Bite II",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "warcry",
-            "cold",
-            "duration"
-          ],
-          "grantedEffectId": "SupportIceBitePlayerTwo"
-        },
-        {
-          "name": "Bhatair's Vengeance",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "warcry",
-            "cold",
-            "duration"
-          ],
-          "grantedEffectId": "SupportBhatairsVengeancePlayer"
-        },
-        {
-          "name": "Blazing Critical",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "fire",
-            "duration"
-          ],
-          "grantedEffectId": "SupportBlazingCriticalPlayer"
-        },
-        {
-          "name": "Thrill of the Kill II",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "lightning",
-            "duration"
-          ],
-          "grantedEffectId": "SupportThrillOfTheKillPlayerTwo"
-        },
-        {
-          "name": "Thrill of the Kill",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "lightning",
-            "duration"
-          ],
-          "grantedEffectId": "SupportThrillOfTheKillPlayer"
-        },
-        {
-          "name": "Innervate",
-          "delta": 0,
-          "pct": 0,
-          "tags": [
-            "support",
-            "attack",
-            "lightning",
-            "duration"
-          ],
-          "grantedEffectId": "SupportInnervatePlayer"
+          "grantedEffectId": "SupportDiallasDesirePlayer"
         }
       ]
     }

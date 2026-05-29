@@ -119,9 +119,32 @@ for gid, g in pairs(groups) do
   outGroups[tostring(gid)] = { x = g.x, y = g.y, orbits = g.orbits, nodes = g.nodes }
 end
 
+-- classes: class.ts reads name/integerId/base_{str,dex,int}/ascendancies[{id,internalId,name}].
+-- Strip the heavy `background` blobs PoB keeps for rendering.
+local outClasses = {}
+if type(t.classes) == "table" then
+  for i, c in ipairs(t.classes) do
+    local asc = {}
+    if type(c.ascendancies) == "table" then
+      for j, a in ipairs(c.ascendancies) do
+        asc[j] = { id = a.id, internalId = a.internalId, name = a.name }
+      end
+    end
+    outClasses[i] = {
+      name = c.name,
+      integerId = c.integerId,
+      base_str = c.base_str,
+      base_dex = c.base_dex,
+      base_int = c.base_int,
+      ascendancies = asc,
+    }
+  end
+end
+
 local out = {
   nodes = outNodes,
   groups = outGroups,
+  classes = outClasses,
   constants = {
     orbitRadii = C.orbitRadii,
     skillsPerOrbit = C.skillsPerOrbit,

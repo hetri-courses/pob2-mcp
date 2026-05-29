@@ -1,14 +1,19 @@
 /**
  * Measure real support-gem DPS rankings for the Martial Artist guide's skills.
  *
- * Runs in PLAIN 0.4 (do NOT set POB_TREE_VERSION) so the Node tree-tools and
- * the Lua calc engine agree on 0_4 — synthesize a representative geared Monk
- * per skill, then suggest_gem_link to rank supports by measured DPS.
+ * PoB 0.16.0 ships the 0.5 calc + tree natively (calc defaults to treeVersion
+ * "0_5") AND the Martial Artist ascendancy, and fixes Palm skills scaling with
+ * unarmed/Quarterstaff damage + crit. So we now synthesize a real Monk /
+ * Martial Artist on 0.5 and suggest_gem_link to rank supports by measured DPS.
  *
- * Writes data/ma-supports.json for build-ma-guide.mjs to consume, so guide
- * regeneration stays fast + deterministic (no bridge spawn there).
+ * MUST run with POB_TREE_VERSION=0_5 so the Node tree-tools (which pick the
+ * allocated nodes) speak the same tree the calc engine runs. (The old version
+ * of this script ran in plain 0.4 because that's all the calc had — relying on
+ * the 0_4 default is exactly what produced bogus "Palm doesn't scale" results.)
  *
- * Run: node tools/measure-ma-supports.mjs
+ * Writes data/ma-supports.json for build-ma-guide.mjs to consume.
+ *
+ * Run: POB_TREE_VERSION=0_5 node tools/measure-ma-supports.mjs
  */
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
@@ -21,6 +26,14 @@ import { loadGems } from "../build/gemData.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const forkPath = "D:\\pob2-mcp\\pob2-fork\\src";
 
+const TREE_VERSION = process.env.POB_TREE_VERSION;
+if (!TREE_VERSION) {
+  console.error("Refusing to run without POB_TREE_VERSION set — the Node tree-tools would default to 0_4 and");
+  console.error("disagree with the calc engine. Run: POB_TREE_VERSION=0_5 node tools/measure-ma-supports.mjs");
+  process.exit(1);
+}
+
+const ASCENDANCY = "Martial Artist";
 // Physical Quarterstaff strikes valid for the unarmed Hollow Palm build.
 const SKILLS = ["Killing Palm", "Staggering Palm"];
 
@@ -28,7 +41,7 @@ const gems = loadGems(forkPath);
 const b = new LuaBridge({ forkPath, timeoutMs: 180_000 });
 await b.start();
 
-const out = { generatedAt: new Date().toISOString(), calcVersion: "0_4", skills: {} };
+const out = { generatedAt: new Date().toISOString(), calcVersion: TREE_VERSION, ascendancy: ASCENDANCY, skills: {} };
 
 for (const skill of SKILLS) {
   console.log(`\n=== ${skill} ===`);
@@ -37,6 +50,7 @@ for (const skill of SKILLS) {
     // to pull crit notables via the stat-text heuristic).
     const r = await synthesizeBuild(b, forkPath, {
       className: "Monk",
+      ascendancyName: ASCENDANCY,
       level: 90,
       mainSkillName: skill,
       goal: "dps",
@@ -44,7 +58,11 @@ for (const skill of SKILLS) {
       supportCount: 0,
       refineWithCalc: false,
     });
-    const link = await suggestGemLink(b, forkPath, { maxCandidates: 50, limit: 25 });
+    // Test ALL engine-compatible supports (cap well above the ~224 screened),
+    // so ranking is by real measured DPS rather than the tag-overlap heuristic
+    // — otherwise a strong but low-tag-overlap support (e.g. Uul-Netol's
+    // Embrace) can fall outside a small cut. Slower, but this is one-time data.
+    const link = await suggestGemLink(b, forkPath, { maxCandidates: 400, limit: 25 });
     const supports = link.proposals.map((p) => {
       const gem = gems.all.find((x) => x.name === p.candidate.name);
       return {

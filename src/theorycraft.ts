@@ -366,7 +366,11 @@ export async function suggestGemLink(
     })
     // When using engine filter, keep all; tag-overlap mode requires overlap > 0
     .filter((x) => screenSource === "engine" || x.overlap > 0 || activeTags.length === 0)
-    .sort((a, b) => b.score - a.score);
+    // Stable tiebreaker by name: screen_supports returns candidates in Lua hash
+    // order (non-deterministic across runs), so without a tiebreaker the
+    // `slice(0, maxCandidates)` cut would include/drop equal-score supports
+    // differently each run (observed: a strong support dropping in/out).
+    .sort((a, b) => b.score - a.score || a.gem.name.localeCompare(b.gem.name));
 
   // Resolve each lightweight candidate back to its full Gem record (so we
   // have gemType, isSupport, etc. for the proposal payload).
